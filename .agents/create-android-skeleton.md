@@ -6,6 +6,24 @@ Create the smallest useful Android project skeleton that can be built reproducib
 
 This task moves the repository from documentation-only bootstrap toward a minimal buildable Android project.
 
+## Required Branch
+
+Use this branch:
+
+```text
+feature/android-skeleton
+```
+
+Do not work directly on main.
+Do not commit directly to main.
+Open a pull request against main when the task is complete.
+
+## Mandatory Startup Behavior
+
+Before making changes, follow the Mandatory Startup Protocol defined in AGENTS.md.
+
+Present the startup status block before editing files.
+
 ## Required Reading
 
 Before making changes, read:
@@ -14,10 +32,11 @@ Before making changes, read:
 2. docs/project-state.md
 3. docs/roadmap.md
 4. docs/architecture.md
-5. AGENTS.md
-6. .agents/README.md
-7. .agents/bootstrap-phase-0.md
-8. this file
+5. docs/index.md
+6. AGENTS.md
+7. .agents/README.md
+8. .agents/bootstrap-phase-0.md
+9. this file
 
 ## Scope
 
