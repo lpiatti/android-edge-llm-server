@@ -1,0 +1,53 @@
+name: Bootstrap Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  repository-bootstrap-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify required bootstrap files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "README.md"
+            "docs/index.md"
+            "docs/project-state.md"
+            "docs/roadmap.md"
+            "docs/architecture.md"
+            "AGENTS.md"
+            ".agents/README.md"
+            ".agents/bootstrap-phase-0.md"
+            "CLAUDE.md"
+            ".claude/README.md"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "Missing required file: $file"
+              exit 1
+            fi
+          done
+
+          echo "Bootstrap files verified."
+
+      - name: Detect Android build files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -f "settings.gradle" || -f "settings.gradle.kts" ]]; then
+            echo "Android/Gradle project files detected."
+          else
+            echo "No Android Gradle project detected yet. This is expected during repository bootstrap."
+          fi
