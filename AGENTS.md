@@ -6,6 +6,43 @@ This file is the general operating contract for coding agents working on Android
 
 It applies to all agents unless a more specific instruction file overrides it for a given tool.
 
+## Mandatory Startup Protocol
+
+At the beginning of every new agent session on this repository, before proposing plans or changing files, the agent must read the real repository contents listed below and then present a short startup status block.
+
+Required reading order:
+
+1. README.md
+2. docs/project-state.md
+3. docs/roadmap.md
+4. docs/architecture.md
+5. docs/index.md
+6. AGENTS.md
+7. .agents/README.md
+8. the task-specific file under .agents/, when one is provided
+9. tool-specific instruction files such as CLAUDE.md or CODEX.md, when relevant
+
+The startup status block must contain:
+
+```text
+Repository context:
+- Branch/worktree checked:
+- Files actually read:
+- Current project phase:
+- Current objective:
+- Relevant constraints:
+- Intended task:
+- Proposed branch:
+- First validation command:
+```
+
+Rules:
+
+- Do not make file changes before presenting the startup status block.
+- Do not infer missing file contents from memory or conventions.
+- If a required file is missing, report it explicitly and stop unless the task is to create it.
+- If repository content conflicts with chat history, use repository content.
+
 ## Source of Truth
 
 Repository files are authoritative in this order:
@@ -14,9 +51,10 @@ Repository files are authoritative in this order:
 2. docs/project-state.md
 3. docs/roadmap.md
 4. docs/architecture.md
-5. AGENTS.md
-6. Files under .agents/
-7. Tool-specific instruction files such as CLAUDE.md
+5. docs/index.md
+6. AGENTS.md
+7. Files under .agents/
+8. Tool-specific instruction files such as CLAUDE.md or CODEX.md
 
 If repository content conflicts with chat history, use repository content.
 If a required file is missing, report it instead of inferring its contents.
@@ -37,6 +75,25 @@ The project should evolve toward a lightweight Android-native server runtime, no
 6. Update persistent documentation when project state changes.
 7. Do not hide important decisions only in chat or terminal output.
 8. Stop and report blockers instead of inventing missing assumptions.
+9. Present the mandatory startup status block before editing files.
+
+## Branch and PR Rules
+
+Agents must not commit directly to main unless explicitly instructed.
+
+Default workflow:
+
+1. create a feature branch from main
+2. make the smallest useful change
+3. run validation
+4. commit changes
+5. push the branch
+6. open a pull request against main
+
+For implementation tasks, the task brief should define the branch name.
+If no branch name is defined, stop and ask for one.
+
+Direct commits to main are acceptable only for explicit repository-bootstrap maintenance performed by the project orchestrator.
 
 ## Change Discipline
 
