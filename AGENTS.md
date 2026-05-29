@@ -87,14 +87,14 @@ The project should evolve toward a lightweight Android-native server runtime, no
 
 Agents must not commit directly to main unless explicitly instructed.
 
-Default workflow:
+Default workflow (Guided PR & CI/CD Validation):
 
-1. create a feature branch from main
-2. make the smallest useful change
-3. run validation
-4. commit changes
-5. push the branch
-6. open a pull request against main
+1. **Create a feature branch** from main.
+2. **Make the smallest useful change** in the local workspace.
+3. **Commit changes** locally with a descriptive message.
+4. **Push the branch** to the remote origin.
+5. **Halt and Guide the User**: Since local builds are unavailable and GitHub CI runs only on pull requests, the agent MUST stop at this point. The agent MUST provide clear, step-by-step instructions to the user on how to open a Pull Request against `main` on GitHub to trigger the compilation.
+6. **Wait for CI Feedback**: The agent must ask the user to report the outcome of the GitHub Actions build (successful APK generation or compilation errors) before suggesting a merge or proceeding to further steps.
 
 For implementation tasks, the task brief should define the branch name.
 If no branch name is defined, stop and ask for one.
