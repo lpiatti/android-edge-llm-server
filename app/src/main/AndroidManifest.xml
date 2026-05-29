@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Application Manifest File
+     ==================================
+     This XML file defines the structure, permissions, and entry points of our application.
+     It acts as the directory for the Android operating system to know what our app can do. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Foreground Service Permission (Android 9+)
+         Required to promote our background thread/server to a Foreground Service so that
+         the Android OS does not suspend it when the screen turns off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Foreground Service Special Use Permission (Android 14 / API 34+)
+         As defined in docs/daemon-stability-guidelines.md, targeting API 34 requires
+         declaring specific foreground service types for high resilience. We use the
+         "specialUse" type to qualify our local AI server daemon. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Internet Permission: Necessary for exposing our local HTTP server to other
+         clients on the same Local Area Network (LAN). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Application Node: Configures global application settings -->
+    <application
+        android:allowBackup="true"
+        android:label="Edge LLM Server"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+
+        <!-- Main Activity: The single entry point for our control UI panel.
+             This screen allows the user to start, stop, and monitor the server daemon. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

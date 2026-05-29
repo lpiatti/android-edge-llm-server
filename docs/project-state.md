@@ -55,6 +55,13 @@ The initial architecture document is maintained in docs/architecture.md.
 - Android Gradle project structure not yet created
 - real Android APK build not yet configured
 
+## Target Platform & Environment Profile
+
+- **Minimum SDK:** API 29 (Android 10.0) — allows repurposing older devices.
+- **Target SDK:** API 34 (Android 14.0) — complies with modern security and foreground service requirements.
+- **Deployment Profile:** Dedicated server mode (permanently on AC power, dedicated high-perf Wi-Fi, low concurrent app usage).
+- **Stability Rules:** Enforced by [daemon-stability-guidelines.md](file:///c:/python_sources/android-edge-llm-server/docs/daemon-stability-guidelines.md).
+
 ## Operational Workflow
 
 ### ChatGPT
@@ -125,14 +132,14 @@ Completed:
 - shared agent workspace created in .agents/
 - Claude Code entrypoint created in CLAUDE.md
 - Claude Code workspace created in .claude/
-- bootstrap GitHub Actions check created in .github/workflows/bootstrap-check.yml
+- created actual Android project skeleton (Gradle files, Manifest, Activity)
+- replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
 
 Still open:
 
-- create actual Android project skeleton
-- replace bootstrap check with or extend it into real Android CI build
-- produce first APK artifact
+- produce first APK artifact (configured in CI, pending first workflow execution)
 - perform Garden architecture analysis
+
 
 ## Important Development Philosophy
 
