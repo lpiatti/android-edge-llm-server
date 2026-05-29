@@ -20,6 +20,17 @@
          clients on the same Local Area Network (LAN). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Wake Lock Permission: Keeps the CPU running for inference and server requests
+         when the mobile screen is turned off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Access Wifi State: Required to retrieve the device's local LAN IP address -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Receive Boot Completed: Allows the server to automatically restart when
+         the smartphone power cycles or reboots. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- Application Node: Configures global application settings -->
     <application
         android:allowBackup="true"
@@ -37,6 +48,29 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Background Server Service: Houses the Ktor embedded server,
+             keeps CPU active via WakeLock, and runs 24/7. -->
+        <service
+            android:name=".LlmServerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local edge AI server daemon and OpenAI endpoints" />
+        </service>
+
+        <!-- Boot Receiver: Starts the background service daemon automatically when
+             the device boots up. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

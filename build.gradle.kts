@@ -9,4 +9,7 @@ plugins {
     
     // Kotlin Android Plugin - Integrates Kotlin support into the Android build system
     id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+
+    // Kotlinx Serialization Plugin - Essential for JSON parsing in Ktor
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22" apply false
 }

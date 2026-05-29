@@ -6,6 +6,11 @@ This file is the general operating contract for coding agents working on Android
 
 It applies to all agents unless a more specific instruction file overrides it for a given tool.
 
+> [!IMPORTANT]
+> **Environment Constraint**: The local runner host does NOT have a Java, Gradle, or Android SDK development environment installed.
+> Do NOT execute or try to run local gradle commands (e.g., `./gradlew assembleDebug` or `./gradlew test`).
+> All code compilation, testing, and APK validation are performed exclusively via **GitHub Actions CI/CD** on pull requests and pushes to feature branches.
+
 ## Mandatory Startup Protocol
 
 At the beginning of every new agent session on this repository, before proposing plans or changing files, the agent must read the real repository contents listed below and then present a short startup status block.
@@ -30,11 +35,12 @@ Repository context:
 - Files actually read:
 - Current project phase:
 - Current objective:
-- Relevant constraints:
+- Relevant constraints: (Include local host environment constraints here!)
 - Intended task:
 - Proposed branch:
-- First validation command:
+- First validation command: GitHub Actions CI (no local Gradle available)
 ```
+
 
 Rules:
 
@@ -180,7 +186,7 @@ Files changed:
 - ...
 
 Validation:
-- Command: ...
+- GitHub CI Run: [Link or status of the action run]
 - Result: ...
 
 Open issues:

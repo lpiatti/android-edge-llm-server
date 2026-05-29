@@ -51,9 +51,7 @@ The initial architecture document is maintained in docs/architecture.md.
 - limited Git/GitHub operational experience
 - Android internals still to be explored
 - runtime lifecycle not yet analyzed
-- no local Android CI/CD experience yet
-- Android Gradle project structure not yet created
-- real Android APK build not yet configured
+- **No local Gradle/Android SDK/Java environment**: The local runner host machine does not have build tools. All compilations and build validations must be performed exclusively via GitHub Actions CI/CD.
 
 ## Target Platform & Environment Profile
 
@@ -134,11 +132,12 @@ Completed:
 - Claude Code workspace created in .claude/
 - created actual Android project skeleton (Gradle files, Manifest, Activity)
 - replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
+- produced first APK artifact (configured in CI, built, and verified on a physical phone)
 
-Still open:
+Still open / In Progress:
 
-- produce first APK artifact (configured in CI, pending first workflow execution)
-- perform Garden architecture analysis
+- Phase 3: Minimal Server Skeleton & Fake API Daemon (Active)
+- perform Garden architecture analysis (Phase 1)
 
 
 ## Important Development Philosophy

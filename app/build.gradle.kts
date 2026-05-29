@@ -6,6 +6,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -63,6 +64,14 @@ dependencies {
     
     // Material Components: Essential library for standard Google UI components
     implementation("com.google.android.material:material:1.11.0")
+
+    // Ktor Server Core & CIO Engine
+    implementation("io.ktor:ktor-server-core:2.3.11")
+    implementation("io.ktor:ktor-server-cio:2.3.11")
+    
+    // Ktor Content Negotiation and Kotlinx JSON serialization
+    implementation("io.ktor:ktor-server-content-negotiation:2.3.11")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
 
     // Basic Testing Frameworks (needed for standard template structure)
     testImplementation("junit:junit:4.13.2")
