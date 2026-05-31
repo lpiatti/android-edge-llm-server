@@ -65,9 +65,12 @@ jobs:
           gradle-version: '8.4'
           cache-overwrite-existing: true
 
+      - name: Make Gradlew Executable
+        run: chmod +x gradlew
+
       - name: Build Debug APK
-        # We run the gradle build command directly since the setup-gradle action places gradle in the PATH
-        run: gradle assembleDebug --no-daemon --stacktrace
+        # We run the Gradle Wrapper to ensure build reproducibility and local plugin version mapping
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
