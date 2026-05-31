@@ -130,10 +130,10 @@ Completed:
 - Created actual Android project skeleton (Gradle files, Manifest, Activity)
 - Replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
 - Produced, compiled, and verified the first Fake API APK on a physical phone via GitHub Actions CI
+- Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Mock OpenAI/Ollama endpoints, Bottom Tab UI, network bind interface selector, and raw diagnostic HTTP console dumps completed)
 
 Still open / In Progress:
 
-- Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Active)
 - Perform Garden architecture analysis (Phase 1)
 
 

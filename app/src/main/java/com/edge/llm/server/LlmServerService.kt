@@ -33,6 +33,7 @@ class LlmServerService : Service() {
     private var serverEngine: ApplicationEngine? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var bindHost = "0.0.0.0"
     
     private val startTime = Date()
 
@@ -44,6 +45,10 @@ class LlmServerService : Service() {
         @Volatile
         var isServiceRunning = false
             private set
+
+        @Volatile
+        var activeBindHost = "0.0.0.0"
+            internal set
     }
 
     override fun onCreate() {
@@ -58,7 +63,9 @@ class LlmServerService : Service() {
         }
         
         isServiceRunning = true
-        ServerConsole.log("Starting Foreground Service Daemon...")
+        bindHost = intent?.getStringExtra("EXTRA_BIND_HOST") ?: "0.0.0.0"
+        activeBindHost = bindHost
+        ServerConsole.log("Starting Foreground Service Daemon bound to $bindHost...")
         
         // 1. Promote to Foreground Service
         startForegroundNotification()
@@ -88,7 +95,7 @@ class LlmServerService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Edge LLM Server: ACTIVE")
-            .setContentText("Listening on LAN port 8080. Tap to configure.")
+            .setContentText("Listening on http://$bindHost:8080. Tap to configure.")
             .setSmallIcon(android.R.drawable.sym_def_app_icon)
             .setOngoing(true)
             .build()
@@ -125,9 +132,9 @@ class LlmServerService : Service() {
     }
 
     private fun startHttpServer() {
-        ServerConsole.log("Spinning up embedded Ktor HTTP server...")
+        ServerConsole.log("Spinning up embedded Ktor HTTP server on $bindHost...")
         try {
-            serverEngine = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+            serverEngine = embeddedServer(CIO, port = 8080, host = bindHost) {
                 install(ContentNegotiation) {
                     json(kotlinx.serialization.json.Json {
                         prettyPrint = true
@@ -255,7 +262,7 @@ class LlmServerService : Service() {
                 }
             }.start(wait = false)
             
-            ServerConsole.log("Server listening successfully at http://0.0.0.0:8080")
+            ServerConsole.log("Server listening successfully at http://$bindHost:8080")
         } catch (e: Exception) {
             ServerConsole.log("CRITICAL ERROR: Failed to launch HTTP server: ${e.message}")
         }
@@ -275,6 +282,7 @@ class LlmServerService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isServiceRunning = false
+        activeBindHost = "0.0.0.0"
         ServerConsole.log("Stopping HTTP Server...")
         try {
             serverEngine?.stop(1000, 2000)

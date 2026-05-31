@@ -13,6 +13,7 @@ The repository is the source of truth for project state, roadmap, architectural 
 | docs/roadmap.md | Phase-based roadmap from bootstrap to runtime integration | Active |
 | docs/architecture.md | Initial conceptual architecture and boundaries | Active |
 | docs/daemon-stability-guidelines.md | Platform SDK cut-offs, dedicated server profile, and background stability strategies | Active |
+| docs/decision-log.md | Architecture decision registry from project bootstrap to present | Active |
 
 ## Agent Instructions
 
@@ -42,6 +43,7 @@ For project orientation, read in this order:
 3. docs/roadmap.md
 4. docs/architecture.md
 5. docs/daemon-stability-guidelines.md
-6. AGENTS.md
-7. .agents/README.md
-8. agent-specific files in .agents/
+6. docs/decision-log.md
+7. AGENTS.md
+8. .agents/README.md
+9. agent-specific files in .agents/

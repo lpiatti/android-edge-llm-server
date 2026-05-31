@@ -60,6 +60,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logTextViewTest: TextView
     private lateinit var logScrollViewTest: ScrollView
 
+    // Interface selector pills
+    private lateinit var wifiPill: Button
+    private lateinit var mobilePill: Button
+    private lateinit var allPill: Button
+    private var selectedBindingInterface = "All" // "All", "Wi-Fi", "Mobile"
+
     // Execution States
     private var activeProtocol = "OpenAI" // "OpenAI" or "Ollama"
     private var selectedEndpointIndex = 0 // 0, 1, 2
@@ -147,6 +153,69 @@ class MainActivity : AppCompatActivity() {
             layoutParams = params
         }
         serverLayout.addView(statusCard)
+
+        // Target Network Bind Interface Selector
+        val interfaceLabel = TextView(this).apply {
+            text = "Target Network Bind Interface:"
+            textSize = 12f
+            setTextColor(Color.parseColor("#888888"))
+            setPadding(0, 16, 0, 8)
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        serverLayout.addView(interfaceLabel)
+
+        val interfacePillRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+
+        wifiPill = Button(this).apply {
+            text = "Wi-Fi Only"
+            setTextColor(Color.parseColor("#888888"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            setPadding(12, 8, 12, 8)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener { setInterfaceBinding("Wi-Fi") }
+        }
+        interfacePillRow.addView(wifiPill)
+
+        mobilePill = Button(this).apply {
+            text = "Mobile Only"
+            setTextColor(Color.parseColor("#888888"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            setPadding(12, 8, 12, 8)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener { setInterfaceBinding("Mobile") }
+        }
+        interfacePillRow.addView(mobilePill)
+
+        allPill = Button(this).apply {
+            text = "All Interfaces"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#3366BB"))
+            textSize = 10f
+            setPadding(12, 8, 12, 8)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener { setInterfaceBinding("All") }
+        }
+        interfacePillRow.addView(allPill)
+        serverLayout.addView(interfacePillRow)
 
         // Button Control Row
         val controlRow = LinearLayout(this).apply {
@@ -595,7 +664,13 @@ class MainActivity : AppCompatActivity() {
             ServerConsole.log("Requesting server daemon shutdown...")
             stopService(intent)
         } else {
-            ServerConsole.log("Requesting server daemon startup...")
+            val bindHost = when (selectedBindingInterface) {
+                "Wi-Fi" -> getInterfaceIp("Wi-Fi")
+                "Mobile" -> getInterfaceIp("Mobile")
+                else -> "0.0.0.0"
+            }
+            intent.putExtra("EXTRA_BIND_HOST", bindHost)
+            ServerConsole.log("Requesting server daemon startup on $bindHost...")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
             } else {
@@ -614,6 +689,13 @@ class MainActivity : AppCompatActivity() {
             
             toggleButton.text = "Stop Daemon"
             toggleButton.setBackgroundColor(Color.parseColor("#CC0000"))
+            
+            wifiPill.isEnabled = false
+            mobilePill.isEnabled = false
+            allPill.isEnabled = false
+            wifiPill.alpha = 0.5f
+            mobilePill.alpha = 0.5f
+            allPill.alpha = 0.5f
         } else {
             statusCard.text = "SERVER STATE: OFFLINE\n[Daemon Inactive]"
             statusCard.setTextColor(Color.parseColor("#FF4444"))
@@ -621,16 +703,29 @@ class MainActivity : AppCompatActivity() {
             
             toggleButton.text = "Start Daemon"
             toggleButton.setBackgroundColor(Color.parseColor("#0099CC"))
+            
+            wifiPill.isEnabled = true
+            mobilePill.isEnabled = true
+            allPill.isEnabled = true
+            wifiPill.alpha = 1.0f
+            mobilePill.alpha = 1.0f
+            allPill.alpha = 1.0f
         }
     }
 
     private fun refreshIpAddress() {
-        val ip = getLocalIpAddress()
+        val ip = when (selectedBindingInterface) {
+            "Wi-Fi" -> getInterfaceIp("Wi-Fi")
+            "Mobile" -> getInterfaceIp("Mobile")
+            else -> getLocalIpAddress()
+        }
+        
         if (ip != "127.0.0.1") {
             ipTextView.text = "LAN Access Endpoint:\nhttp://$ip:8080"
             ipTextView.setTextColor(Color.parseColor("#00DDFF"))
         } else {
-            ipTextView.text = "LAN Access Endpoint:\nNOT CONNECTED TO WIFI"
+            val label = if (selectedBindingInterface == "Wi-Fi") "NO ACTIVE WI-FI IP" else if (selectedBindingInterface == "Mobile") "NO ACTIVE MOBILE NETWORK IP" else "NOT CONNECTED"
+            ipTextView.text = "LAN Access Endpoint:\n$label"
             ipTextView.setTextColor(Color.parseColor("#FF8800"))
         }
     }
@@ -674,6 +769,52 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (ex: Exception) {
             ServerConsole.log("Failed to resolve IP address: ${ex.message}")
+        }
+        return "127.0.0.1"
+    }
+
+    private fun setInterfaceBinding(mode: String) {
+        if (selectedBindingInterface == mode) return
+        if (LlmServerService.isServiceRunning) {
+            ServerConsole.log("Cannot change binding interface while daemon is running.")
+            return
+        }
+        selectedBindingInterface = mode
+        
+        // Update styling
+        wifiPill.setBackgroundColor(Color.parseColor(if (mode == "Wi-Fi") "#3366BB" else "#222222"))
+        wifiPill.setTextColor(Color.parseColor(if (mode == "Wi-Fi") "#FFFFFF" else "#888888"))
+        
+        mobilePill.setBackgroundColor(Color.parseColor(if (mode == "Mobile") "#3366BB" else "#222222"))
+        mobilePill.setTextColor(Color.parseColor(if (mode == "Mobile") "#FFFFFF" else "#888888"))
+        
+        allPill.setBackgroundColor(Color.parseColor(if (mode == "All") "#3366BB" else "#222222"))
+        allPill.setTextColor(Color.parseColor(if (mode == "All") "#FFFFFF" else "#888888"))
+        
+        refreshIpAddress()
+    }
+
+    private fun getInterfaceIp(type: String): String {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val name = networkInterface.name.lowercase()
+                
+                // Filter by name
+                if (type == "Wi-Fi" && !name.contains("wlan")) continue
+                if (type == "Mobile" && !(name.contains("rmnet") || name.contains("ccmni") || name.contains("ppp") || name.contains("wwan") || name.contains("epdg"))) continue
+                
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val inetAddress = addresses.nextElement()
+                    if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
+                        return inetAddress.hostAddress ?: ""
+                    }
+                }
+            }
+        } catch (ex: Exception) {
+            ServerConsole.log("Failed to resolve $type IP: ${ex.message}")
         }
         return "127.0.0.1"
     }
@@ -794,10 +935,35 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        ServerConsole.log("[Client Harness] Executing $method request to http://localhost:8080$path")
+        // Resolve target Ktor listening address
+        val activeHost = if (LlmServerService.isServiceRunning) {
+            val h = LlmServerService.activeBindHost
+            if (h == "0.0.0.0") "localhost" else h
+        } else {
+            "localhost"
+        }
+        
+        ServerConsole.log("[Client Harness] Executing $method request to http://$activeHost:8080$path")
+        
+        // Format beautiful raw HTTP request dump frame
+        val requestDump = StringBuilder().apply {
+            append(">>> HTTP REQUEST DUMP:\n")
+            append("$method $path HTTP/1.1\n")
+            append("Host: $activeHost:8080\n")
+            append("Content-Type: application/json\n")
+            append("Authorization: Bearer mock-token\n")
+            if (method == "POST" && bodyPayload != null) {
+                append("Content-Length: ${bodyPayload.toByteArray(StandardCharsets.UTF_8).size}\n")
+                append("\n")
+                append(bodyPayload)
+            } else {
+                append("\n[GET Request - No Request Body Payload]")
+            }
+            append("\n\n----------------------------------------\n\n")
+        }.toString()
         
         // Visual indicator for launch state
-        logTextViewTest.text = "Polling API server endpoint..."
+        logTextViewTest.text = requestDump + "Polling local edge AI server daemon..."
         latencyMetric.text = "---"
         statusMetric.text = "..."
         statusMetric.setTextColor(Color.WHITE)
@@ -810,7 +976,7 @@ class MainActivity : AppCompatActivity() {
             var ok = false
             
             try {
-                val url = URL("http://localhost:8080$path")
+                val url = URL("http://$activeHost:8080$path")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = method
                 conn.connectTimeout = 3000
@@ -842,13 +1008,28 @@ class MainActivity : AppCompatActivity() {
             
             val latency = System.currentTimeMillis() - startTime
             
+            // Format dynamic response received log dump
+            val responseText = StringBuilder().apply {
+                append(requestDump)
+                append("<<< RESPONSE RECEIVED:\n")
+                if (responseCode != -1) {
+                    append("HTTP/1.1 $responseCode ${if (ok) "OK" else "ERROR"}\n")
+                    append("Content-Length: ${responseBody.toByteArray(StandardCharsets.UTF_8).size}\n")
+                    append("\n")
+                    append(responseBody)
+                } else {
+                    append("API CONNECTION ERROR:\n")
+                    append(responseBody)
+                }
+            }.toString()
+            
             runOnUiThread {
                 latencyMetric.text = "${latency}ms"
                 statusMetric.text = if (responseCode != -1) "$responseCode" else "ERR"
                 statusMetric.setTextColor(if (ok) Color.parseColor("#00FF66") else Color.parseColor("#FF4444"))
                 sizeMetric.text = "${responseBody.length} chars"
                 
-                logTextViewTest.text = responseBody
+                logTextViewTest.text = responseText
                 logScrollViewTest.post {
                     logScrollViewTest.fullScroll(View.FOCUS_DOWN)
                 }
