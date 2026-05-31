@@ -6,10 +6,4 @@
 plugins {
     // Android Application Gradle Plugin (AGP) - Orchestrates Android-specific packaging and compilation
     id("com.android.application") version "8.2.2" apply false
-    
-    // Kotlin Android Plugin - Integrates Kotlin support into the Android build system
-    id("org.jetbrains.kotlin.android") version "2.0.20" apply false
- 
-    // Kotlinx Serialization Plugin - Essential for JSON parsing in Ktor
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.20" apply false
 }
