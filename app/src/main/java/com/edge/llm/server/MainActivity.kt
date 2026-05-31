@@ -945,6 +945,8 @@ class MainActivity : AppCompatActivity() {
         
         ServerConsole.log("[Client Harness] Executing $method request to http://$activeHost:8080$path")
         
+        val body = bodyPayload
+
         // Format beautiful raw HTTP request dump frame
         val requestDump = StringBuilder().apply {
             append(">>> HTTP REQUEST DUMP:\n")
@@ -952,10 +954,10 @@ class MainActivity : AppCompatActivity() {
             append("Host: $activeHost:8080\n")
             append("Content-Type: application/json\n")
             append("Authorization: Bearer mock-token\n")
-            if (method == "POST" && bodyPayload != null) {
-                append("Content-Length: ${bodyPayload.toByteArray(StandardCharsets.UTF_8).size}\n")
+            if (method == "POST" && body != null) {
+                append("Content-Length: ${body.encodeToByteArray().size}\n")
                 append("\n")
-                append(bodyPayload)
+                append(body)
             } else {
                 append("\n[GET Request - No Request Body Payload]")
             }
@@ -984,9 +986,9 @@ class MainActivity : AppCompatActivity() {
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer mock-token")
                 
-                if (method == "POST" && bodyPayload != null) {
+                if (method == "POST" && body != null) {
                     conn.doOutput = true
-                    val bytes = bodyPayload.toByteArray(StandardCharsets.UTF_8)
+                    val bytes = body.encodeToByteArray()
                     conn.setFixedLengthStreamingMode(bytes.size)
                     val os: OutputStream = conn.outputStream
                     os.write(bytes)
@@ -1007,27 +1009,30 @@ class MainActivity : AppCompatActivity() {
             }
             
             val latency = System.currentTimeMillis() - startTime
+            val finalResponseCode = responseCode
+            val finalResponseBody = responseBody
+            val finalOk = ok
             
             // Format dynamic response received log dump
             val responseText = StringBuilder().apply {
                 append(requestDump)
                 append("<<< RESPONSE RECEIVED:\n")
-                if (responseCode != -1) {
-                    append("HTTP/1.1 $responseCode ${if (ok) "OK" else "ERROR"}\n")
-                    append("Content-Length: ${responseBody.toByteArray(StandardCharsets.UTF_8).size}\n")
+                if (finalResponseCode != -1) {
+                    append("HTTP/1.1 $finalResponseCode ${if (finalOk) "OK" else "ERROR"}\n")
+                    append("Content-Length: ${finalResponseBody.encodeToByteArray().size}\n")
                     append("\n")
-                    append(responseBody)
+                    append(finalResponseBody)
                 } else {
                     append("API CONNECTION ERROR:\n")
-                    append(responseBody)
+                    append(finalResponseBody)
                 }
             }.toString()
             
             runOnUiThread {
                 latencyMetric.text = "${latency}ms"
-                statusMetric.text = if (responseCode != -1) "$responseCode" else "ERR"
-                statusMetric.setTextColor(if (ok) Color.parseColor("#00FF66") else Color.parseColor("#FF4444"))
-                sizeMetric.text = "${responseBody.length} chars"
+                statusMetric.text = if (finalResponseCode != -1) "$finalResponseCode" else "ERR"
+                statusMetric.setTextColor(if (finalOk) Color.parseColor("#00FF66") else Color.parseColor("#FF4444"))
+                sizeMetric.text = "${finalResponseBody.length} chars"
                 
                 logTextViewTest.text = responseText
                 logScrollViewTest.post {
