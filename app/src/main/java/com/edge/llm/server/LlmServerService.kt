@@ -207,6 +207,51 @@ class LlmServerService : Service() {
                             call.respond(io.ktor.http.HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
                         }
                     }
+
+                    // --- Ollama Compatibility Endpoints ---
+
+                    // Endpoint: /api/tags (Ollama models list)
+                    get("/api/tags") {
+                        val clientIp = call.request.local.remoteHost
+                        ServerConsole.log("--> GET /api/tags from $clientIp")
+                        
+                        val response = OllamaTagsResponse(
+                            models = listOf(
+                                OllamaModelItem(name = "llama3:latest"),
+                                OllamaModelItem(name = "gemma:2b")
+                            )
+                        )
+                        call.respond(response)
+                        ServerConsole.log("<-- 200 OK (Returned 2 Ollama tags)")
+                    }
+
+                    // Endpoint: /api/chat (Ollama chat completion)
+                    post("/api/chat") {
+                        val clientIp = call.request.local.remoteHost
+                        try {
+                            val req = call.receive<OllamaChatRequest>()
+                            ServerConsole.log("--> POST /api/chat (model=${req.model}) from $clientIp")
+                            
+                            val lastUserMsg = req.messages.lastOrNull { it.role == "user" }?.content ?: ""
+                            ServerConsole.log("    User: \"$lastUserMsg\"")
+
+                            val fakeAnswer = "Ciao! Risposta dal server Edge locale in formato Ollama. Ho ricevuto il tuo messaggio: \"$lastUserMsg\""
+                            
+                            val response = OllamaChatResponse(
+                                model = req.model,
+                                created_at = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault()).format(java.util.Date()),
+                                message = OllamaMessage(role = "assistant", content = fakeAnswer),
+                                done = true,
+                                total_duration = 1250000L
+                            )
+                            call.respond(response)
+                            ServerConsole.log("<-- 200 OK (Ollama response sent)")
+                        } catch (e: Exception) {
+                            val errorMsg = e.message ?: "Unknown parsing error"
+                            ServerConsole.log("ERROR processing Ollama chat: $errorMsg")
+                            call.respond(io.ktor.http.HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                        }
+                    }
                 }
             }.start(wait = false)
             
@@ -304,5 +349,42 @@ class LlmServerService : Service() {
         val model: String,
         val choices: List<Choice>,
         val usage: Usage
+    )
+
+    // --- JSON Serialization Data Classes (Ollama-Compatible schemas) ---
+
+    @Serializable
+    data class OllamaModelItem(
+        val name: String,
+        val modified_at: String,
+        val size: Long = 4700000000L,
+        val digest: String = "sha256:mock"
+    )
+
+    @Serializable
+    data class OllamaTagsResponse(
+        val models: List<OllamaModelItem>
+    )
+
+    @Serializable
+    data class OllamaMessage(
+        val role: String,
+        val content: String
+    )
+
+    @Serializable
+    data class OllamaChatRequest(
+        val model: String,
+        val messages: List<OllamaMessage>,
+        val stream: Boolean? = false
+    )
+
+    @Serializable
+    data class OllamaChatResponse(
+        val model: String,
+        val created_at: String,
+        val message: OllamaMessage,
+        val done: Boolean,
+        val total_duration: Long
     )
 }

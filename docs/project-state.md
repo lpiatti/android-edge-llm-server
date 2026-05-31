@@ -112,32 +112,29 @@ Current structure:
 
 ## Immediate Priorities
 
-1. Stabilize repository structure
-2. Create initial Android Gradle project skeleton
-3. Create Android CI workflow with real build once skeleton exists
-4. Analyze Google Garden architecture
-5. Build first reproducible APK
-6. Create minimal fake API server
-7. Integrate runtime progressively
+1. Implement in-app Bottom Tab Navigation (MainActivity UI)
+2. Expand LlmServerService with local Ktor Ollama mock endpoints (/api/tags and /api/chat)
+3. Create interactive Dynamic API Client Test Suite inside Tab 2
+4. Perform Garden repository architectural analysis (Phase 1)
+5. Integrate real runtime progressively (Phase 4)
 
 ## Bootstrap Progress
 
 Completed:
 
-- documentation index created in docs/index.md
-- initial architecture document created in docs/architecture.md
-- general agent contract created in AGENTS.md
-- shared agent workspace created in .agents/
-- Claude Code entrypoint created in CLAUDE.md
-- Claude Code workspace created in .claude/
-- created actual Android project skeleton (Gradle files, Manifest, Activity)
-- replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
-- produced first APK artifact (configured in CI, built, and verified on a physical phone)
+- Documentation index created in docs/index.md
+- Initial architecture document created in docs/architecture.md
+- General agent contract created in AGENTS.md (featuring CI validation and incremental rules)
+- Shared agent workspace created in .agents/
+- Claude Code and Codex entrypoints created in CLAUDE.md and CODEX.md
+- Created actual Android project skeleton (Gradle files, Manifest, Activity)
+- Replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
+- Produced, compiled, and verified the first Fake API APK on a physical phone via GitHub Actions CI
 
 Still open / In Progress:
 
-- Phase 3: Minimal Server Skeleton & Fake API Daemon (Active)
-- perform Garden architecture analysis (Phase 1)
+- Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Active)
+- Perform Garden architecture analysis (Phase 1)
 
 
 ## Important Development Philosophy

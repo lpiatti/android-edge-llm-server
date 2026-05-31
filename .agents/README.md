@@ -17,6 +17,7 @@ Files in this directory provide more specific operational guidance.
 - Read README.md, docs/project-state.md, docs/roadmap.md, and docs/architecture.md before proposing architectural or implementation changes.
 - Use the specific task brief that matches the current work.
 - If no task brief matches, propose a small new brief instead of improvising a broad task.
+- Treat all implementation plans incrementally based on the actual branch state, avoiding duplicating configurations or setups that have already been committed.
 
 ## Agent Roles
 

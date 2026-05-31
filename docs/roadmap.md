@@ -2,7 +2,7 @@
 
 ## Phase 0 — Repository Bootstrap
 
-Status: IN PROGRESS
+Status: COMPLETED
 
 Goals:
 - initialize repository
@@ -40,7 +40,7 @@ Deliverables:
 
 ## Phase 2 — Minimal Android Build
 
-Status: TODO
+Status: COMPLETED
 
 Goals:
 - compile reproducible APK
@@ -57,7 +57,7 @@ Deliverables:
 
 ## Phase 3 — Minimal Server Skeleton
 
-Status: TODO
+Status: IN PROGRESS (Expanding with in-app Client Test Suite)
 
 Goals:
 - embedded HTTP server

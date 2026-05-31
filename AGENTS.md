@@ -110,6 +110,11 @@ Before making changes, agents should identify:
 - reason for each change
 - risks or unknowns
 
+During implementation, agents MUST follow these strict guidelines:
+
+* **Incremental Delta Principle**: Before writing implementation plans or editing files, the agent MUST inspect the actual current filesystem and branch files. When expanding a branch or adding secondary features on top of a previous step, treat all existing configurations, dependencies, and code files as already active. Propose plans and edits only as an incremental delta, strictly avoiding plans to recreate or re-add already active setups.
+* **Documentation Sync**: At the end of every successful iteration or milestone completion, the agent MUST update `docs/project-state.md` and `docs/roadmap.md` to keep the repository's status 100% accurate.
+
 After making changes, agents should report:
 
 - files changed
