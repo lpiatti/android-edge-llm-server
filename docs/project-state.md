@@ -131,10 +131,11 @@ Completed:
 - Replaced bootstrap check with a real, comprehensive Android CI build (.github/workflows/android-ci.yml)
 - Produced, compiled, and verified the first Fake API APK on a physical phone via GitHub Actions CI
 - Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Mock OpenAI/Ollama endpoints, Bottom Tab UI, network bind interface selector, and raw diagnostic HTTP console dumps completed)
+- Phase 1: Garden Architecture Analysis completed (see docs/garden-analysis.md)
 
 Still open / In Progress:
 
-- Perform Garden architecture analysis (Phase 1)
+- Integrate Google AI Edge runtime, load quantized model, and stream real token generation (Phase 4)
 
 
 ## Important Development Philosophy

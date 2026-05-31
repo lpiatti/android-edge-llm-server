@@ -21,7 +21,7 @@ Deliverables:
 
 ## Phase 1 — Garden Analysis
 
-Status: TODO
+Status: COMPLETED
 
 Goals:
 - understand Google Garden architecture
@@ -79,7 +79,7 @@ Deliverables:
 
 ## Phase 4 — Runtime Integration
 
-Status: TODO
+Status: IN PROGRESS
 
 Goals:
 - integrate Garden runtime

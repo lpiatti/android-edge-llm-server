@@ -73,6 +73,9 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:2.3.11")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
 
+    // Official LiteRT-LM Android SDK for on-device inference
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+
     // Basic Testing Frameworks (needed for standard template structure)
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
