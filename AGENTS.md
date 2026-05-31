@@ -125,23 +125,19 @@ After making changes, agents should report:
 
 ## Current Phase Guardrail
 
-The current repository state is Phase 0 bootstrap unless docs/roadmap.md says otherwise.
+The current repository state is **Phase 1 (Garden Analysis)** and transitioning to **Phase 4 (Runtime Integration)**, since Phase 0, Phase 2, and Phase 3 are fully COMPLETED.
 
-During Phase 0, agents may work on:
+During the current phase, agents may work on:
+- Architectural and dependency analysis of Google AI Edge / Garden components
+- Concept modeling and integration strategy documents
+- Preparing structures for loading local quantized models (weights)
+- Developing interface-level APIs matching runtime providers
+- Enhancing the dynamic test harness to log real inference latency/metrics
 
-- repository structure
-- documentation
-- CI bootstrap
-- agent workflow files
-- minimal project scaffolding if explicitly requested
-
-During Phase 0, agents must not work on:
-
-- real LLM runtime integration
-- Garden code import
-- token streaming implementation
-- broad Android UI implementation
-- multi-provider runtime framework beyond conceptual documentation
+During the current phase, agents must not work on:
+- Large-scale unquantized model imports directly to Git (weights must be kept external or referenced via download scripts)
+- Final production releases or distribution before completing the stability audits
+- Breaking decoupled boundaries between MainActivity and LlmServerService
 
 ## Architectural Guardrails
 
