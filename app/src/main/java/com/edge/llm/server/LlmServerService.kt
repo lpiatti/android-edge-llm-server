@@ -356,7 +356,7 @@ class LlmServerService : Service() {
     @Serializable
     data class OllamaModelItem(
         val name: String,
-        val modified_at: String,
+        val modified_at: String = "2026-05-31T12:00:00Z",
         val size: Long = 4700000000L,
         val digest: String = "sha256:mock"
     )
