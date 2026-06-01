@@ -16,6 +16,11 @@
          "specialUse" type to qualify our local AI server daemon. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- Notification Permission (Android 13 / API 33+)
+         Required to display the persistent foreground service notification.
+         Without this, Android 14 throws a SecurityException when starting foreground services. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Internet Permission: Necessary for exposing our local HTTP server to other
          clients on the same Local Area Network (LAN). -->
     <uses-permission android:name="android.permission.INTERNET" />
