@@ -642,6 +642,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Check for previous session crash logs and output them to the green in-app terminal console
+        try {
+            val crashFile = java.io.File(getExternalFilesDir(null), "crash_log.txt")
+            if (crashFile.exists()) {
+                val crashText = crashFile.readText()
+                ServerConsole.log("⚠️ PREVIOUS SESSION CRASH DETECTED:\n$crashText")
+                crashFile.delete()
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+
         refreshConsoleLogs()
     }
 
