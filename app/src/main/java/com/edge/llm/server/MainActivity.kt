@@ -81,6 +81,24 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Global Uncaught Exception Handler to capture crash logs directly in a file on the device
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val file = java.io.File(getExternalFilesDir(null), "crash_log.txt")
+                java.io.FileOutputStream(file).use { fos ->
+                    java.io.PrintStream(fos).use { ps ->
+                        ps.println("CRASH REPORT (MAIN) - ${java.util.Date()}")
+                        ps.println("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
+                        throwable.printStackTrace(ps)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore writing error
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         // Request runtime Notification permission on Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {

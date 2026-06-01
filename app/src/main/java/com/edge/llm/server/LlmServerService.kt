@@ -53,6 +53,25 @@ class LlmServerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Global Uncaught Exception Handler to capture background thread crash logs
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val file = java.io.File(getExternalFilesDir(null), "crash_log.txt")
+                java.io.FileOutputStream(file).use { fos ->
+                    java.io.PrintStream(fos).use { ps ->
+                        ps.println("CRASH REPORT (SERVICE) - ${java.util.Date()}")
+                        ps.println("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
+                        throwable.printStackTrace(ps)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore writing error
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+        
         ServerConsole.log("Initializing LlmServerService...")
     }
 
