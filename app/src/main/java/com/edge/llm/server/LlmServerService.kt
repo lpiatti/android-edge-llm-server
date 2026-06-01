@@ -30,7 +30,7 @@ import kotlinx.serialization.Serializable
  */
 class LlmServerService : Service() {
 
-    private var serverEngine: ApplicationEngine? = null
+    private var serverEngine: EmbeddedServer<*, *>? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var bindHost = "0.0.0.0"
