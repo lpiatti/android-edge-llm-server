@@ -66,12 +66,12 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
 
     // Ktor Server Core & CIO Engine
-    implementation("io.ktor:ktor-server-core:2.3.11")
-    implementation("io.ktor:ktor-server-cio:2.3.11")
+    implementation("io.ktor:ktor-server-core:3.0.3")
+    implementation("io.ktor:ktor-server-cio:3.0.3")
     
     // Ktor Content Negotiation and Kotlinx JSON serialization
-    implementation("io.ktor:ktor-server-content-negotiation:2.3.11")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
+    implementation("io.ktor:ktor-server-content-negotiation:3.0.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
 
     // Official LiteRT-LM Android SDK for on-device inference (aligned with Google AI Edge Gallery version)
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
