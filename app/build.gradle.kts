@@ -5,8 +5,8 @@
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android") version "2.0.20"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.20"
+    id("org.jetbrains.kotlin.android") version "2.2.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.0"
 }
 
 android {
@@ -73,8 +73,8 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:2.3.11")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
 
-    // Official LiteRT-LM Android SDK for on-device inference
-    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+    // Official LiteRT-LM Android SDK for on-device inference (aligned with Google AI Edge Gallery version)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
 
     // Basic Testing Frameworks (needed for standard template structure)
     testImplementation("junit:junit:4.13.2")
