@@ -83,3 +83,20 @@ This document contains a chronological registry of the primary technical design,
 * **Decision:** Structure the Tab 2 ("Test") console to output full raw HTTP request/response frame dumps.
 * **Context:** API testers often output just the final JSON string, masking the HTTP exchange mechanics.
 * **Rationale:** To make the built-in Client Test Harness highly instructional and professional, we format and dump a detailed `>>> HTTP REQUEST DUMP` (verb, path, headers, payload sizes) and matching `<<< RESPONSE RECEIVED` blocks in monospaced bright green font. The harness automatically routes diagnostics to Ktor's exact active binding IP to bypass connection refused socket restrictions.
+
+---
+
+## 10. Ktor 3.0.3 Upgrade and Kotlin 2.2.0 Alignment
+* **Date:** 2026-06-01
+* **Decision:** Upgrade Kotlin plugin version to 2.2.0 and Ktor server dependencies to 3.0.3.
+* **Context:** Transitioning to Phase 4 (Runtime Integration) imported LiteRT-LM, which forced a modern `kotlinx-coroutines` runtime (1.8+). Running Ktor 2.3.11 with these coroutines triggered an immediate JVM signature crash (`NoSuchMethodError` on `LockFreeLinkedListHead.addLast`).
+* **Rationale:** Ktor 3.0.3 is natively compiled against Kotlin 2.x and coroutines 1.8+, resolving the binary ABI conflict completely. We updated variable bindings from `ApplicationEngine` to `EmbeddedServer<*, *>` to match Ktor 3's new engine structure while keeping the server logic completely unchanged.
+
+---
+
+## 11. Local In-App Diagnostic Crash Catcher
+* **Date:** 2026-06-01
+* **Decision:** Implement a global uncaught exception handler in both `MainActivity` and `LlmServerService` that outputs system stacktraces to `crash_log.txt` and reads it at subsequent app startup to display errors directly on the screen inside the monospaced green console.
+* **Context:** Android 11+ Scoped Storage restricts third-party file explorers from reading `Android/data/` folders, making it impossible for standard users to find and share local crash log files without PC developer tools (ADB).
+* **Rationale:** The in-app catcher allows the user to see the exact crash report immediately inside the app upon restarting it. This eliminates the need for PC-side debuggers or file manager workarounds, ensuring extremely fast self-diagnostics.
+

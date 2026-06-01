@@ -82,15 +82,14 @@ Deliverables:
 Status: IN PROGRESS
 
 Goals:
-- integrate Garden runtime
-- load model
-- execute inference
-- stream generated tokens
+- [x] Milestone 4.1: Integrate LiteRT-LM dependency, configure ProGuard rules, upgrade coroutines/Ktor to 3.0.3, stabilize foreground service across SDKs, and build in-app crash reporter.
+- [ ] Milestone 4.2: Implement dynamic Storage Access Framework (SAF) folder picker, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
 
 Deliverables:
-- real token generation
-- inference abstraction layer
-- streaming responses
+- [x] Aligned build configuration and stable background server running Ktor 3.0.3 and LiteRT-LM on physical devices.
+- [ ] Folder selector (SAF) inside MainActivity.
+- [ ] Real token generation and inference abstraction.
+- [ ] Streaming HTTP responses.
 
 ---
 

@@ -132,10 +132,11 @@ Completed:
 - Produced, compiled, and verified the first Fake API APK on a physical phone via GitHub Actions CI
 - Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Mock OpenAI/Ollama endpoints, Bottom Tab UI, network bind interface selector, and raw diagnostic HTTP console dumps completed)
 - Phase 1: Garden Architecture Analysis completed (see docs/garden-analysis.md)
+- Phase 4 (Milestone 4.1): LiteRT-LM dependency integration (`litertlm-android:0.11.0`) completed, R8/ProGuard keep rules configured, Kotlin compiler upgraded to `2.2.0`, and Ktor engine upgraded to `3.0.3` to solve binary coroutine version conflicts. Background Foreground Service stabilized with backward-compatible SDK guards (Android 10-13 backport), dynamic startup notification permissions, and a local in-app crash logger that displays system stacktraces directly inside the terminal console.
 
 Still open / In Progress:
 
-- Integrate Google AI Edge runtime, load quantized model, and stream real token generation (Phase 4)
+- Phase 4 (Milestone 4.2): Implement dynamic Storage Access Framework (SAF) folder picker, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
 
 
 ## Important Development Philosophy
