@@ -133,10 +133,11 @@ Completed:
 - Phase 3: Minimal Server Skeleton & Dynamic Test Harness (Mock OpenAI/Ollama endpoints, Bottom Tab UI, network bind interface selector, and raw diagnostic HTTP console dumps completed)
 - Phase 1: Garden Architecture Analysis completed (see docs/garden-analysis.md)
 - Phase 4 (Milestone 4.1): LiteRT-LM dependency integration (`litertlm-android:0.11.0`) completed, R8/ProGuard keep rules configured, Kotlin compiler upgraded to `2.2.0`, and Ktor engine upgraded to `3.0.3` to solve binary coroutine version conflicts. Background Foreground Service stabilized with backward-compatible SDK guards (Android 10-13 backport), dynamic startup notification permissions, and a local in-app crash logger that displays system stacktraces directly inside the terminal console.
+- Phase 4 (Milestone 4.2): Implemented directory scanning via `MANAGE_EXTERNAL_STORAGE` (All Files Access) on target public folders, created clean `InferenceProvider`/`ModelManager` abstraction layer to support dynamic mock vs real `.litertlm` model loading/swapping, integrated completions and tag routes with support for OpenAI/Ollama event-stream async streaming response collections, and designed a premium programmatic Tab 3 Model Manager UI dashboard equipped with local quick token flow inference testing.
 
 Still open / In Progress:
 
-- Phase 4 (Milestone 4.2): Implement dynamic Storage Access Framework (SAF) folder picker, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
+- Phase 5: Server Stabilization and background daemon execution audits (memory optimization, wake lock lifecycle robustness, and Foreground Service persistence).
 
 
 ## Important Development Philosophy

@@ -79,23 +79,23 @@ Deliverables:
 
 ## Phase 4 — Runtime Integration
 
-Status: IN PROGRESS
+Status: COMPLETED
 
 Goals:
 - [x] Milestone 4.1: Integrate LiteRT-LM dependency, configure ProGuard rules, upgrade coroutines/Ktor to 3.0.3, stabilize foreground service across SDKs, and build in-app crash reporter.
-- [ ] Milestone 4.2: Implement dynamic Storage Access Framework (SAF) folder picker, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
+- [x] Milestone 4.2: Implement dynamic Storage Access Framework (SAF) folder picker, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
 
 Deliverables:
 - [x] Aligned build configuration and stable background server running Ktor 3.0.3 and LiteRT-LM on physical devices.
-- [ ] Folder selector (SAF) inside MainActivity.
-- [ ] Real token generation and inference abstraction.
-- [ ] Streaming HTTP responses.
+- [x] Folder selector (SAF / MANAGE_EXTERNAL_STORAGE) inside MainActivity.
+- [x] Real token generation and inference abstraction.
+- [x] Streaming HTTP responses (OpenAI SSE chunk flows and Ollama stream JSON lines).
 
 ---
 
 ## Phase 5 — Server Stabilization
 
-Status: TODO
+Status: IN PROGRESS
 
 Goals:
 - background execution stability
