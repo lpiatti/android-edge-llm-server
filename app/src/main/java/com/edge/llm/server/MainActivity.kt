@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                val file = java.io.File(getExternalFilesDir(null), "crash_log.txt")
+                val file = java.io.File(filesDir, "crash_log.txt")
                 java.io.FileOutputStream(file).use { fos ->
                     java.io.PrintStream(fos).use { ps ->
                         ps.println("CRASH REPORT (MAIN) - ${java.util.Date()}")
@@ -119,6 +119,18 @@ class MainActivity : AppCompatActivity() {
                 // Ignore writing error
             }
             defaultHandler?.uncaughtException(thread, throwable)
+        }
+
+        // Check for previous session crash logs and cache them in the ServerConsole immediately
+        try {
+            val crashFile = java.io.File(filesDir, "crash_log.txt")
+            if (crashFile.exists()) {
+                val crashText = crashFile.readText()
+                ServerConsole.log("⚠️ PREVIOUS SESSION CRASH DETECTED:\n$crashText")
+                crashFile.delete()
+            }
+        } catch (e: Exception) {
+            // Ignore
         }
 
         // Request runtime Notification permission on Android 13+ (API 33+)
@@ -578,7 +590,6 @@ class MainActivity : AppCompatActivity() {
         }
         modelLayout.addView(quickLogScrollView)
 
-        contentLayout.addView(serverLayout)
         contentLayout.addView(modelLayout)
 
         // --- SECTION B: Tab 2 (API Client Test Suite) ---
@@ -911,18 +922,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-        }
-
-        // Check for previous session crash logs and output them to the green in-app terminal console
-        try {
-            val crashFile = java.io.File(getExternalFilesDir(null), "crash_log.txt")
-            if (crashFile.exists()) {
-                val crashText = crashFile.readText()
-                ServerConsole.log("⚠️ PREVIOUS SESSION CRASH DETECTED:\n$crashText")
-                crashFile.delete()
-            }
-        } catch (e: Exception) {
-            // Ignore
         }
 
         refreshConsoleLogs()

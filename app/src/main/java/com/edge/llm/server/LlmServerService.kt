@@ -61,7 +61,7 @@ class LlmServerService : Service() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                val file = java.io.File(getExternalFilesDir(null), "crash_log.txt")
+                val file = java.io.File(filesDir, "crash_log.txt")
                 java.io.FileOutputStream(file).use { fos ->
                     java.io.PrintStream(fos).use { ps ->
                         ps.println("CRASH REPORT (SERVICE) - ${java.util.Date()}")
