@@ -91,8 +91,8 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
         ServerConsole.log("LiteRT-LM: Running synchronous inference...")
         activeEngine.createConversation().use { conversation ->
             // Collect flow tokens synchronously into a string
-            conversation.sendMessageAsync(prompt).collect { token ->
-                resultBuilder.append(token.text)
+            conversation.sendMessageAsync(prompt).collect { message ->
+                resultBuilder.append(message.toString())
             }
         }
         val finalAnswer = resultBuilder.toString()
@@ -104,8 +104,8 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         ServerConsole.log("LiteRT-LM: Running streaming inference...")
         activeEngine.createConversation().use { conversation ->
-            conversation.sendMessageAsync(prompt).collect { token ->
-                emit(token.text)
+            conversation.sendMessageAsync(prompt).collect { message ->
+                emit(message.toString())
             }
         }
         ServerConsole.log("LiteRT-LM: Streaming inference flow completed.")
