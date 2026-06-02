@@ -36,13 +36,19 @@
          the smartphone power cycles or reboots. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Storage Access Permissions: Required to scan and read model weights from public folders directly -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <!-- Application Node: Configures global application settings -->
     <application
         android:allowBackup="true"
         android:label="Edge LLM Server"
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
 
         <!-- Main Activity: The single entry point for our control UI panel.
              This screen allows the user to start, stop, and monitor the server daemon. -->

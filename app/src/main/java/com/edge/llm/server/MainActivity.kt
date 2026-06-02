@@ -35,8 +35,10 @@ class MainActivity : AppCompatActivity() {
 
     // Tab Layout Framework
     private lateinit var serverLayout: LinearLayout
+    private lateinit var modelLayout: LinearLayout
     private lateinit var testLayout: LinearLayout
     private lateinit var serverTabBtn: Button
+    private lateinit var modelTabBtn: Button
     private lateinit var testTabBtn: Button
 
     // Tab 1 (Server Console) Views
@@ -60,6 +62,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logTextViewTest: TextView
     private lateinit var logScrollViewTest: ScrollView
 
+    // Tab 3 (Model Manager Panel) Views
+    private lateinit var modelSpinner: android.widget.Spinner
+    private lateinit var grantPermissionBtn: Button
+    private lateinit var initModelBtn: Button
+    private lateinit var stopModelBtn: Button
+    private lateinit var modelStatusCard: TextView
+    private lateinit var permissionStatusCard: TextView
+    private lateinit var mockPillModel: Button
+    private lateinit var realPillModel: Button
+    private var isModelMockModeSelected = true // Default is Mock Mode
+    private var discoveredModelFiles = emptyList<java.io.File>()
+
+    // Quick Inference Test Views
+    private lateinit var quickPromptEdit: EditText
+    private lateinit var quickRunBtn: Button
+    private lateinit var quickLogTextView: TextView
+    private lateinit var quickLogScrollView: ScrollView
+
     // Interface selector pills
     private lateinit var wifiPill: Button
     private lateinit var mobilePill: Button
@@ -74,6 +94,7 @@ class MainActivity : AppCompatActivity() {
     private val statusUpdateRunnable = object : Runnable {
         override fun run() {
             updateUiState()
+            updateModelUiState()
             statusUpdateHandler.postDelayed(this, 1000) // Poll every 1 second
         }
     }
@@ -323,6 +344,241 @@ class MainActivity : AppCompatActivity() {
         serverLayout.addView(logScrollViewServer)
 
         contentLayout.addView(serverLayout)
+
+        // --- SECTION D: Tab 3 (Model Manager Panel) ---
+        modelLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 32, 40, 32)
+            visibility = View.GONE // Hidden initially
+        }
+
+        val modelTitle = TextView(this).apply {
+            text = "Model Lifecycle Manager"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_HORIZONTAL
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }
+        modelLayout.addView(modelTitle)
+
+        val modelSubtitle = TextView(this).apply {
+            text = "Load local .litertlm models or use mock"
+            textSize = 13f
+            setTextColor(Color.parseColor("#777777"))
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 0, 0, 16)
+        }
+        modelLayout.addView(modelSubtitle)
+
+        // Storage Permission Alert Card
+        permissionStatusCard = TextView(this).apply {
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setPadding(16, 16, 16, 16)
+            typeface = Typeface.MONOSPACE
+        }
+        modelLayout.addView(permissionStatusCard)
+
+        grantPermissionBtn = Button(this).apply {
+            text = "Grant Storage Access"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#FF8800"))
+            textSize = 11f
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 8, 0, 8)
+            }
+            layoutParams = params
+            setOnClickListener { requestStoragePermission() }
+        }
+        modelLayout.addView(grantPermissionBtn)
+
+        // Switch pills: Mock Mode vs Real Model
+        val modeSelectionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 16)
+        }
+
+        mockPillModel = Button(this).apply {
+            text = "Mock Engine"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#3366BB")) // Active initially
+            textSize = 11f
+            setPadding(16, 8, 16, 8)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener { setModelMode(true) }
+        }
+        modeSelectionRow.addView(mockPillModel)
+
+        realPillModel = Button(this).apply {
+            text = "Real .litertlm File"
+            setTextColor(Color.parseColor("#888888"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 11f
+            setPadding(16, 8, 16, 8)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = params
+            setOnClickListener { setModelMode(false) }
+        }
+        modeSelectionRow.addView(realPillModel)
+        modelLayout.addView(modeSelectionRow)
+
+        // Dropdown visual area
+        val dropdownLabel = TextView(this).apply {
+            text = "Select Local Quantized Model (.litertlm):"
+            textSize = 12f
+            setTextColor(Color.parseColor("#888888"))
+            setPadding(0, 0, 0, 8)
+        }
+        modelLayout.addView(dropdownLabel)
+
+        modelSpinner = android.widget.Spinner(this).apply {
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+            isEnabled = false // Disabled initially since Mock is selected
+        }
+        modelLayout.addView(modelSpinner)
+
+        // Control Buttons (Initialize & Unload)
+        val modelControlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+
+        initModelBtn = Button(this).apply {
+            text = "Initialize Model"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#0099CC"))
+            textSize = 12f
+            setPadding(16, 12, 16, 12)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener { triggerInitializeModel() }
+        }
+        modelControlRow.addView(initModelBtn)
+
+        stopModelBtn = Button(this).apply {
+            text = "Unload Model"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#CC0000"))
+            textSize = 12f
+            setPadding(16, 12, 16, 12)
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener { triggerUnloadModel() }
+        }
+        modelControlRow.addView(stopModelBtn)
+        modelLayout.addView(modelControlRow)
+
+        // Model Status Card
+        modelStatusCard = TextView(this).apply {
+            text = "MODEL STATE: UNLOADED\n[No active engine]"
+            textSize = 13f
+            setTextColor(Color.parseColor("#FF4444"))
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#2E1B1B"))
+            setPadding(20, 20, 20, 20)
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+        modelLayout.addView(modelStatusCard)
+
+        // Quick Inference Test Panel
+        val quickTestTitle = TextView(this).apply {
+            text = "Quick Inference Test:"
+            textSize = 13f
+            setTextColor(Color.parseColor("#888888"))
+            setPadding(0, 8, 0, 8)
+        }
+        modelLayout.addView(quickTestTitle)
+
+        val quickInputRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 8)
+            }
+            layoutParams = params
+        }
+
+        quickPromptEdit = EditText(this).apply {
+            hint = "Chiedi qualcosa al modello..."
+            textSize = 11f
+            setTextColor(Color.parseColor("#555555"))
+            setBackgroundColor(Color.parseColor("#1C1C1C"))
+            setPadding(16, 12, 16, 12)
+            typeface = Typeface.DEFAULT
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            isEnabled = false
+        }
+        quickInputRow.addView(quickPromptEdit)
+
+        quickRunBtn = Button(this).apply {
+            text = "Invia"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            textSize = 11f
+            setPadding(16, 12, 16, 12)
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams = params
+            isEnabled = false
+            setOnClickListener { executeQuickDirectTest() }
+        }
+        quickInputRow.addView(quickRunBtn)
+        modelLayout.addView(quickInputRow)
+
+        // Monospaced output logs for quick direct test
+        quickLogTextView = TextView(this).apply {
+            textSize = 10f
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
+            setPadding(16, 16, 16, 16)
+            typeface = Typeface.MONOSPACE
+            text = "Inizializza un modello per avviare un test diretto di inferenza."
+        }
+        quickLogScrollView = ScrollView(this).apply {
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f)
+            layoutParams = params
+            addView(quickLogTextView)
+        }
+        modelLayout.addView(quickLogScrollView)
+
+        contentLayout.addView(serverLayout)
+        contentLayout.addView(modelLayout)
 
         // --- SECTION B: Tab 2 (API Client Test Suite) ---
         testLayout = LinearLayout(this).apply {
@@ -604,24 +860,38 @@ class MainActivity : AppCompatActivity() {
             text = "Server Daemon"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#3366BB")) // Highlighted initially
-            textSize = 12f
+            textSize = 11f
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
             layoutParams = params
-            setOnClickListener { switchTab(true) }
+            setOnClickListener { switchTab(0) }
         }
         tabBar.addView(serverTabBtn)
 
-        // Tab Button 2
-        testTabBtn = Button(this).apply {
-            text = "Client Test Harness"
+        // Tab Button 2 (Model Manager)
+        modelTabBtn = Button(this).apply {
+            text = "Model Manager"
             setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.parseColor("#121212"))
-            textSize = 12f
+            textSize = 11f
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 6, 0)
+            }
+            layoutParams = params
+            setOnClickListener { switchTab(1) }
+        }
+        tabBar.addView(modelTabBtn)
+
+        // Tab Button 3 (Test Harness)
+        testTabBtn = Button(this).apply {
+            text = "Test Harness"
+            setTextColor(Color.parseColor("#888888"))
+            setBackgroundColor(Color.parseColor("#121212"))
+            textSize = 11f
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
-            setOnClickListener { switchTab(false) }
+            setOnClickListener { switchTab(2) }
         }
         tabBar.addView(testTabBtn)
         rootLayout.addView(tabBar)
@@ -661,6 +931,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         statusUpdateHandler.post(statusUpdateRunnable)
         refreshIpAddress()
+        refreshDiscoveredModels()
+        updateModelUiState()
     }
 
     override fun onPause() {
@@ -673,26 +945,250 @@ class MainActivity : AppCompatActivity() {
         ServerConsole.logListener = null
     }
 
-    private fun switchTab(showServer: Boolean) {
-        if (showServer) {
-            serverLayout.visibility = View.VISIBLE
-            testLayout.visibility = View.GONE
-            
-            serverTabBtn.setBackgroundColor(Color.parseColor("#3366BB"))
-            serverTabBtn.setTextColor(Color.WHITE)
-            
-            testTabBtn.setBackgroundColor(Color.parseColor("#121212"))
-            testTabBtn.setTextColor(Color.parseColor("#888888"))
-        } else {
-            serverLayout.visibility = View.GONE
-            testLayout.visibility = View.VISIBLE
-            
-            serverTabBtn.setBackgroundColor(Color.parseColor("#121212"))
-            serverTabBtn.setTextColor(Color.parseColor("#888888"))
-            
-            testTabBtn.setBackgroundColor(Color.parseColor("#3366BB"))
-            testTabBtn.setTextColor(Color.WHITE)
+    private fun switchTab(tabIndex: Int) {
+        serverLayout.visibility = View.GONE
+        modelLayout.visibility = View.GONE
+        testLayout.visibility = View.GONE
+        
+        serverTabBtn.setBackgroundColor(Color.parseColor("#121212"))
+        serverTabBtn.setTextColor(Color.parseColor("#888888"))
+        modelTabBtn.setBackgroundColor(Color.parseColor("#121212"))
+        modelTabBtn.setTextColor(Color.parseColor("#888888"))
+        testTabBtn.setBackgroundColor(Color.parseColor("#121212"))
+        testTabBtn.setTextColor(Color.parseColor("#888888"))
+        
+        when (tabIndex) {
+            0 -> {
+                serverLayout.visibility = View.VISIBLE
+                serverTabBtn.setBackgroundColor(Color.parseColor("#3366BB"))
+                serverTabBtn.setTextColor(Color.WHITE)
+            }
+            1 -> {
+                modelLayout.visibility = View.VISIBLE
+                modelTabBtn.setBackgroundColor(Color.parseColor("#3366BB"))
+                modelTabBtn.setTextColor(Color.WHITE)
+                refreshDiscoveredModels()
+            }
+            2 -> {
+                testLayout.visibility = View.VISIBLE
+                testTabBtn.setBackgroundColor(Color.parseColor("#3366BB"))
+                testTabBtn.setTextColor(Color.WHITE)
+            }
         }
+    }
+
+    private fun setModelMode(isMock: Boolean) {
+        if (isModelMockModeSelected == isMock) return
+        isModelMockModeSelected = isMock
+        
+        mockPillModel.setBackgroundColor(Color.parseColor(if (isMock) "#3366BB" else "#222222"))
+        mockPillModel.setTextColor(Color.parseColor(if (isMock) "#FFFFFF" else "#888888"))
+        realPillModel.setBackgroundColor(Color.parseColor(if (!isMock) "#3366BB" else "#222222"))
+        realPillModel.setTextColor(Color.parseColor(if (!isMock) "#FFFFFF" else "#888888"))
+        
+        modelSpinner.isEnabled = !isMock && hasStoragePermission() && !ModelManager.isLoading && !ModelManager.isModelLoaded
+        
+        updateModelUiState()
+    }
+
+    private fun hasStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestStoragePermission() {
+        ServerConsole.log("Requesting All Files Access permission...")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = android.net.Uri.parse("package:${packageName}")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                startActivity(intent)
+            }
+        } else {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 102)
+        }
+    }
+
+    private fun refreshDiscoveredModels() {
+        if (!hasStoragePermission()) {
+            permissionStatusCard.text = "STORAGE ACCESS: PERMISSION REQUIRED\n(Grant 'All Files Access' to scan /sdcard/Download/)"
+            permissionStatusCard.setTextColor(Color.parseColor("#FFBB33"))
+            permissionStatusCard.setBackgroundColor(Color.parseColor("#2E251B"))
+            grantPermissionBtn.visibility = View.VISIBLE
+            modelSpinner.isEnabled = false
+            return
+        }
+
+        permissionStatusCard.text = "STORAGE ACCESS: GRANTED\n(Active folder: /sdcard/Download/llm-server/models/)"
+        permissionStatusCard.setTextColor(Color.parseColor("#33FF33"))
+        permissionStatusCard.setBackgroundColor(Color.parseColor("#1B2E1B"))
+        grantPermissionBtn.visibility = View.GONE
+        modelSpinner.isEnabled = !isModelMockModeSelected && !ModelManager.isLoading && !ModelManager.isModelLoaded
+
+        discoveredModelFiles = ModelManager.listLocalModels()
+        val fileNames = discoveredModelFiles.map { it.name }
+        
+        val adapter = android.widget.ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            if (fileNames.isEmpty()) listOf("No .litertlm files found in Downloads") else fileNames
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        modelSpinner.adapter = adapter
+    }
+
+    private fun triggerInitializeModel() {
+        val isMock = isModelMockModeSelected
+        var path: String? = null
+        
+        if (!isMock) {
+            if (discoveredModelFiles.isEmpty()) {
+                ServerConsole.log("Model Manager: Cannot initialize real model because no .litertlm files were discovered.")
+                return
+            }
+            val selectedIndex = modelSpinner.selectedItemPosition
+            val selectedFile = discoveredModelFiles.getOrNull(selectedIndex)
+            if (selectedFile == null) {
+                ServerConsole.log("Model Manager: No model selected.")
+                return
+            }
+            path = selectedFile.absolutePath
+        }
+        
+        ServerConsole.log("Model Manager: Initializing model (isMock=$isMock, path=${path ?: "N/A"})...")
+        
+        modelStatusCard.text = "MODEL STATE: LOADING...\n(Initializing engine, please wait...)"
+        modelStatusCard.setTextColor(Color.parseColor("#FFBB33"))
+        modelStatusCard.setBackgroundColor(Color.parseColor("#2E251B"))
+        initModelBtn.isEnabled = false
+        stopModelBtn.isEnabled = false
+        mockPillModel.isEnabled = false
+        realPillModel.isEnabled = false
+        modelSpinner.isEnabled = false
+        
+        Thread {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    ModelManager.loadModel(path, isMock)
+                }
+                runOnUiThread {
+                    ServerConsole.log("Model Manager: Initialization completed successfully.")
+                    updateModelUiState()
+                }
+            } catch (e: Exception) {
+                val error = e.message ?: e.toString()
+                runOnUiThread {
+                    ServerConsole.log("Model Manager: Initialization failed: $error")
+                    updateModelUiState()
+                }
+            }
+        }.start()
+    }
+
+    private fun triggerUnloadModel() {
+        Thread {
+            ModelManager.unloadActiveModel()
+            runOnUiThread {
+                ServerConsole.log("Model Manager: Model unloaded successfully.")
+                updateModelUiState()
+            }
+        }.start()
+    }
+
+    private fun updateModelUiState() {
+        val loaded = ModelManager.isModelLoaded
+        val loading = ModelManager.isLoading
+        val error = ModelManager.loadingError
+        val mock = ModelManager.isMockMode
+        
+        if (loading) {
+            modelStatusCard.text = "MODEL STATE: LOADING...\n[Initializing Engine]"
+            modelStatusCard.setTextColor(Color.parseColor("#FFBB33"))
+            modelStatusCard.setBackgroundColor(Color.parseColor("#2E251B"))
+            
+            initModelBtn.isEnabled = false
+            stopModelBtn.isEnabled = false
+            modelSpinner.isEnabled = false
+            mockPillModel.isEnabled = false
+            realPillModel.isEnabled = false
+        } else if (loaded) {
+            val details = if (mock) "Mock Mode Active" else "Loaded: ${ModelManager.activeModelName}"
+            modelStatusCard.text = "MODEL STATE: ACTIVE\n[$details]"
+            modelStatusCard.setTextColor(Color.parseColor("#33FF33"))
+            modelStatusCard.setBackgroundColor(Color.parseColor("#1B2E1B"))
+            
+            initModelBtn.isEnabled = false
+            stopModelBtn.isEnabled = true
+            
+            modelSpinner.isEnabled = false
+            mockPillModel.isEnabled = false
+            realPillModel.isEnabled = false
+            
+            quickPromptEdit.isEnabled = true
+            quickPromptEdit.setBackgroundColor(Color.parseColor("#0A0A0A"))
+            quickPromptEdit.setTextColor(Color.parseColor("#00FF66"))
+            quickRunBtn.isEnabled = true
+            quickRunBtn.setBackgroundColor(Color.parseColor("#22AA55"))
+        } else {
+            val errorText = if (error != null) "\nError: $error" else "\n[No active engine]"
+            modelStatusCard.text = "MODEL STATE: UNLOADED$errorText"
+            modelStatusCard.setTextColor(Color.parseColor("#FF4444"))
+            modelStatusCard.setBackgroundColor(Color.parseColor("#2E1B1B"))
+            
+            initModelBtn.isEnabled = true
+            stopModelBtn.isEnabled = false
+            
+            mockPillModel.isEnabled = true
+            realPillModel.isEnabled = true
+            modelSpinner.isEnabled = hasStoragePermission() && !isModelMockModeSelected
+            
+            quickPromptEdit.isEnabled = false
+            quickPromptEdit.setBackgroundColor(Color.parseColor("#1C1C1C"))
+            quickPromptEdit.setTextColor(Color.parseColor("#555555"))
+            quickRunBtn.isEnabled = false
+            quickRunBtn.setBackgroundColor(Color.parseColor("#333333"))
+        }
+    }
+
+    private fun executeQuickDirectTest() {
+        val prompt = quickPromptEdit.text.toString()
+        if (prompt.isEmpty()) return
+        
+        val activeProvider = ModelManager.activeProvider
+        quickLogTextView.text = ">>> Direct Prompt: \"$prompt\"\n<<< Awaiting tokens...\n"
+        quickRunBtn.isEnabled = false
+        
+        Thread {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    activeProvider.generateStream(prompt).collect { token ->
+                        runOnUiThread {
+                            quickLogTextView.append(token)
+                            quickLogScrollView.post {
+                                quickLogScrollView.fullScroll(View.FOCUS_DOWN)
+                            }
+                        }
+                    }
+                }
+                runOnUiThread {
+                    quickRunBtn.isEnabled = true
+                }
+            } catch (e: Exception) {
+                val err = e.message ?: e.toString()
+                runOnUiThread {
+                    quickLogTextView.append("\n\nCRITICAL INFERENCE ERROR: $err")
+                    quickRunBtn.isEnabled = true
+                }
+            }
+        }.start()
     }
 
     private fun toggleServerDaemon() {

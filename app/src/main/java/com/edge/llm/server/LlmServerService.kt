@@ -20,6 +20,9 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.writeStringUtf8
 import java.util.Date
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -185,12 +188,11 @@ class LlmServerService : Service() {
                         
                         val response = ModelsResponse(
                             data = listOf(
-                                ModelItem(id = "meta-llama-3-8b-instruct"),
-                                ModelItem(id = "gemma-2b-it")
+                                ModelItem(id = ModelManager.activeModelName)
                             )
                         )
                         call.respond(response)
-                        ServerConsole.log("<-- 200 OK (Returned 2 models)")
+                        ServerConsole.log("<-- 200 OK (Active: ${ModelManager.activeModelName})")
                     }
 
                     // Endpoint: /v1/chat/completions (OpenAI Chat compatibility)
@@ -198,39 +200,89 @@ class LlmServerService : Service() {
                         val clientIp = call.request.local.remoteHost
                         try {
                             val req = call.receive<ChatCompletionRequest>()
-                            ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}) from $clientIp")
+                            ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}, stream=${req.stream}) from $clientIp")
                             
                             val lastUserMsg = req.messages.lastOrNull { it.role == "user" }?.content ?: ""
-                            ServerConsole.log("    User: \"$lastUserMsg\"")
+                            ServerConsole.log("    User prompt: \"$lastUserMsg\"")
 
-                            // Generate realistic mocked completion matching standard payload
-                            val fakeAnswer = "Ciao! Ti rispondo dal Server Edge Android locale in esecuzione sul telefono. Ho ricevuto il tuo messaggio: \"$lastUserMsg\". Lo scheletro del demone HTTP funziona ed è pronto!"
+                            val activeProvider = ModelManager.activeProvider
                             
-                            val response = ChatCompletionResponse(
-                                id = "chatcmpl-" + UUID.randomUUID().toString(),
-                                `object` = "chat.completion",
-                                created = System.currentTimeMillis() / 1000,
-                                model = req.model,
-                                choices = listOf(
-                                    Choice(
-                                        index = 0,
-                                        message = Message(role = "assistant", content = fakeAnswer),
-                                        finish_reason = "stop"
+                            if (req.stream == true) {
+                                call.respondBytesWriter(contentType = ContentType.Text.EventStream) {
+                                    val chunkId = "chatcmpl-" + UUID.randomUUID().toString()
+                                    val createdTime = System.currentTimeMillis() / 1000
+                                    
+                                    try {
+                                        activeProvider.generateStream(lastUserMsg).collect { token ->
+                                            val chunk = ChatCompletionChunk(
+                                                id = chunkId,
+                                                created = createdTime,
+                                                model = ModelManager.activeModelName,
+                                                choices = listOf(
+                                                    ChunkChoice(
+                                                        index = 0,
+                                                        delta = ChunkDelta(content = token),
+                                                        finish_reason = null
+                                                    )
+                                                )
+                                            )
+                                            val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), chunk)
+                                            writeStringUtf8("data: $jsonString\n\n")
+                                            flush()
+                                        }
+                                        // End of stream token
+                                        val endChunk = ChatCompletionChunk(
+                                            id = chunkId,
+                                            created = createdTime,
+                                            model = ModelManager.activeModelName,
+                                            choices = listOf(
+                                                ChunkChoice(
+                                                    index = 0,
+                                                    delta = ChunkDelta(content = ""),
+                                                    finish_reason = "stop"
+                                                )
+                                            )
+                                        )
+                                        val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), endChunk)
+                                        writeStringUtf8("data: $jsonString\n\n")
+                                        writeStringUtf8("data: [DONE]\n\n")
+                                        flush()
+                                        ServerConsole.log("<-- 200 OK (OpenAI Stream completed)")
+                                    } catch (e: Exception) {
+                                        ServerConsole.log("ERROR in stream collection: ${e.message}")
+                                        writeStringUtf8("data: {\"error\": \"${e.message}\"}\n\n")
+                                        flush()
+                                    }
+                                }
+                            } else {
+                                val answer = activeProvider.generate(lastUserMsg)
+                                
+                                val response = ChatCompletionResponse(
+                                    id = "chatcmpl-" + UUID.randomUUID().toString(),
+                                    `object` = "chat.completion",
+                                    created = System.currentTimeMillis() / 1000,
+                                    model = ModelManager.activeModelName,
+                                    choices = listOf(
+                                        Choice(
+                                            index = 0,
+                                            message = Message(role = "assistant", content = answer),
+                                            finish_reason = "stop"
+                                        )
+                                    ),
+                                    usage = Usage(
+                                        prompt_tokens = lastUserMsg.length / 4,
+                                        completion_tokens = answer.length / 4,
+                                        total_tokens = (lastUserMsg.length + answer.length) / 4
                                     )
-                                ),
-                                usage = Usage(
-                                    prompt_tokens = 24,
-                                    completion_tokens = 46,
-                                    total_tokens = 70
                                 )
-                            )
-                            
-                            call.respond(response)
-                            ServerConsole.log("<-- 200 OK (Assistant response sent)")
+                                
+                                call.respond(response)
+                                ServerConsole.log("<-- 200 OK (OpenAI completions response sent)")
+                            }
                         } catch (e: Exception) {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing chat completions: $errorMsg")
-                            call.respond(io.ktor.http.HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
                         }
                     }
 
@@ -243,12 +295,11 @@ class LlmServerService : Service() {
                         
                         val response = OllamaTagsResponse(
                             models = listOf(
-                                OllamaModelItem(name = "llama3:latest"),
-                                OllamaModelItem(name = "gemma:2b")
+                                OllamaModelItem(name = ModelManager.activeModelName)
                             )
                         )
                         call.respond(response)
-                        ServerConsole.log("<-- 200 OK (Returned 2 Ollama tags)")
+                        ServerConsole.log("<-- 200 OK (Active Ollama tag: ${ModelManager.activeModelName})")
                     }
 
                     // Endpoint: /api/chat (Ollama chat completion)
@@ -256,26 +307,64 @@ class LlmServerService : Service() {
                         val clientIp = call.request.local.remoteHost
                         try {
                             val req = call.receive<OllamaChatRequest>()
-                            ServerConsole.log("--> POST /api/chat (model=${req.model}) from $clientIp")
+                            ServerConsole.log("--> POST /api/chat (model=${req.model}, stream=${req.stream}) from $clientIp")
                             
                             val lastUserMsg = req.messages.lastOrNull { it.role == "user" }?.content ?: ""
-                            ServerConsole.log("    User: \"$lastUserMsg\"")
+                            ServerConsole.log("    User prompt: \"$lastUserMsg\"")
 
-                            val fakeAnswer = "Ciao! Risposta dal server Edge locale in formato Ollama. Ho ricevuto il tuo messaggio: \"$lastUserMsg\""
-                            
-                            val response = OllamaChatResponse(
-                                model = req.model,
-                                created_at = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault()).format(java.util.Date()),
-                                message = OllamaMessage(role = "assistant", content = fakeAnswer),
-                                done = true,
-                                total_duration = 1250000L
-                            )
-                            call.respond(response)
-                            ServerConsole.log("<-- 200 OK (Ollama response sent)")
+                            val activeProvider = ModelManager.activeProvider
+                            val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault())
+
+                            if (req.stream == true) {
+                                call.respondBytesWriter(contentType = ContentType.Application.Json) {
+                                    try {
+                                        activeProvider.generateStream(lastUserMsg).collect { token ->
+                                            val chunk = OllamaChatResponse(
+                                                model = ModelManager.activeModelName,
+                                                created_at = formatter.format(java.util.Date()),
+                                                message = OllamaMessage(role = "assistant", content = token),
+                                                done = false,
+                                                total_duration = 0L
+                                            )
+                                            val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), chunk)
+                                            writeStringUtf8("$jsonString\n")
+                                            flush()
+                                        }
+                                        // Final chunk
+                                        val finalChunk = OllamaChatResponse(
+                                            model = ModelManager.activeModelName,
+                                            created_at = formatter.format(java.util.Date()),
+                                            message = OllamaMessage(role = "assistant", content = ""),
+                                            done = true,
+                                            total_duration = 1000000L
+                                        )
+                                        val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), finalChunk)
+                                        writeStringUtf8("$jsonString\n")
+                                        flush()
+                                        ServerConsole.log("<-- 200 OK (Ollama Stream completed)")
+                                    } catch (e: Exception) {
+                                        ServerConsole.log("ERROR in Ollama stream collection: ${e.message}")
+                                        writeStringUtf8("{\"error\": \"${e.message}\"}\n")
+                                        flush()
+                                    }
+                                }
+                            } else {
+                                val answer = activeProvider.generate(lastUserMsg)
+                                
+                                val response = OllamaChatResponse(
+                                    model = ModelManager.activeModelName,
+                                    created_at = formatter.format(java.util.Date()),
+                                    message = OllamaMessage(role = "assistant", content = answer),
+                                    done = true,
+                                    total_duration = 1250000L
+                                )
+                                call.respond(response)
+                                ServerConsole.log("<-- 200 OK (Ollama response sent)")
+                            }
                         } catch (e: Exception) {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing Ollama chat: $errorMsg")
-                            call.respond(io.ktor.http.HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
                         }
                     }
                 }
@@ -376,6 +465,29 @@ class LlmServerService : Service() {
         val model: String,
         val choices: List<Choice>,
         val usage: Usage
+    )
+
+    // --- JSON Serialization Chunks Data Classes (OpenAI-Compatible Streaming) ---
+
+    @Serializable
+    data class ChunkDelta(
+        val content: String
+    )
+
+    @Serializable
+    data class ChunkChoice(
+        val index: Int,
+        val delta: ChunkDelta,
+        val finish_reason: String?
+    )
+
+    @Serializable
+    data class ChatCompletionChunk(
+        val id: String,
+        val `object`: String = "chat.completion.chunk",
+        val created: Long,
+        val model: String,
+        val choices: List<ChunkChoice>
     )
 
     // --- JSON Serialization Data Classes (Ollama-Compatible schemas) ---
