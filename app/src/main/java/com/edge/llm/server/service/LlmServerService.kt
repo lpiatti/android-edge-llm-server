@@ -1,4 +1,4 @@
-package com.edge.llm.server
+package com.edge.llm.server.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.edge.llm.server.model.ModelManager
+import com.edge.llm.server.util.ServerConsole
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*

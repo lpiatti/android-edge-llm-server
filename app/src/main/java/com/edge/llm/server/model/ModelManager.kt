@@ -1,6 +1,7 @@
-package com.edge.llm.server
+package com.edge.llm.server.model
 
 import android.os.Environment
+import com.edge.llm.server.util.ServerConsole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

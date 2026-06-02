@@ -1,5 +1,6 @@
-package com.edge.llm.server
+package com.edge.llm.server.model
 
+import com.edge.llm.server.util.ServerConsole
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers

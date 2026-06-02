@@ -53,7 +53,7 @@
         <!-- Main Activity: The single entry point for our control UI panel.
              This screen allows the user to start, stop, and monitor the server daemon. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -64,7 +64,7 @@
         <!-- Background Server Service: Houses the Ktor embedded server,
              keeps CPU active via WakeLock, and runs 24/7. -->
         <service
-            android:name=".LlmServerService"
+            android:name=".service.LlmServerService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
@@ -76,7 +76,7 @@
         <!-- Boot Receiver: Starts the background service daemon automatically when
              the device boots up. -->
         <receiver
-            android:name=".BootReceiver"
+            android:name=".service.BootReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>

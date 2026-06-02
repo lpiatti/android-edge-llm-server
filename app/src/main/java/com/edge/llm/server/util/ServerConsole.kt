@@ -1,4 +1,4 @@
-package com.edge.llm.server
+package com.edge.llm.server.util
 
 import java.text.SimpleDateFormat
 import java.util.Date
