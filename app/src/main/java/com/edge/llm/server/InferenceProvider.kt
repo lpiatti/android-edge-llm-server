@@ -92,7 +92,7 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
         activeEngine.createConversation().use { conversation ->
             // Collect flow tokens synchronously into a string
             conversation.sendMessageAsync(prompt).collect { token ->
-                resultBuilder.append(token)
+                resultBuilder.append(token.text)
             }
         }
         val finalAnswer = resultBuilder.toString()
@@ -105,7 +105,7 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
         ServerConsole.log("LiteRT-LM: Running streaming inference...")
         activeEngine.createConversation().use { conversation ->
             conversation.sendMessageAsync(prompt).collect { token ->
-                emit(token)
+                emit(token.text)
             }
         }
         ServerConsole.log("LiteRT-LM: Streaming inference flow completed.")
