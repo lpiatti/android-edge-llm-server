@@ -130,8 +130,10 @@ object ModelManager {
             com.edge.llm.server.util.ServerStats.modelLoadTimeMs = duration
             true
         } catch (e: Exception) {
-            ServerConsole.log(LogCategory.ENGINE, "ModelManager ERROR: Swapping failed: ${e.message}")
-            loadingError = e.message ?: e.toString()
+            val errorMsg = e.message ?: e.toString()
+            val hint = if (useGpu) " (Tip: If GPU load fails, try disabling GPU and using CPU mode. Many Mali/Exynos/Adreno GPUs lack OpenCL compatibility with LiteRT-LM)" else ""
+            ServerConsole.log(LogCategory.ENGINE, "ModelManager ERROR: Swapping failed: $errorMsg$hint")
+            loadingError = errorMsg
             isModelLoaded = false
             isGpuActive = false
             

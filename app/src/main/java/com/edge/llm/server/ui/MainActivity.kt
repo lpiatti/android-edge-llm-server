@@ -234,6 +234,7 @@ class MainActivity : AppCompatActivity() {
         if (currentViewState == "MAIN") {
             updateStickyStatus()
             refreshIpAddress()
+            logAllInterfaces()
         }
     }
 
@@ -1736,12 +1737,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun getLocalIpAddress(): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val ni = interfaces.nextElement()
-                val addresses = ni.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
+            val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
+            // 1. Prioritize Wi-Fi interfaces first
+            for (ni in interfaces) {
+                val name = ni.name.lowercase()
+                if (name.contains("wlan") || name.contains("ap") || name.contains("eth") || name.contains("tiwlan")) {
+                    for (address in java.util.Collections.list(ni.inetAddresses)) {
+                        if (!address.isLoopbackAddress && address is Inet4Address) {
+                            return address.hostAddress ?: "127.0.0.1"
+                        }
+                    }
+                }
+            }
+            // 2. Fallback: any active interface that is NOT mobile
+            for (ni in interfaces) {
+                val name = ni.name.lowercase()
+                val isMobile = name.contains("rmnet") || name.contains("ccmni") || name.contains("ppp") || name.contains("wwan") || name.contains("rmnet_data")
+                if (!isMobile && !ni.isLoopback) {
+                    for (address in java.util.Collections.list(ni.inetAddresses)) {
+                        if (!address.isLoopbackAddress && address is Inet4Address) {
+                            return address.hostAddress ?: "127.0.0.1"
+                        }
+                    }
+                }
+            }
+            // 3. Last resort: any non-loopback IPv4 address
+            for (ni in interfaces) {
+                for (address in java.util.Collections.list(ni.inetAddresses)) {
                     if (!address.isLoopbackAddress && address is Inet4Address) {
                         return address.hostAddress ?: "127.0.0.1"
                     }
@@ -1755,18 +1777,34 @@ class MainActivity : AppCompatActivity() {
 
     private fun getInterfaceIp(type: String): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val ni = interfaces.nextElement()
+            val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
+            // First pass: try matching name directly
+            for (ni in interfaces) {
                 val name = ni.name.lowercase()
-                if (type == "Wi-Fi" && !name.contains("wlan")) continue
-                if (type == "Mobile" && !(name.contains("rmnet") || name.contains("ccmni") || name.contains("ppp") || name.contains("wwan"))) continue
+                val isWifiName = name.contains("wlan") || name.contains("ap") || name.contains("eth") || name.contains("tiwlan")
+                val isMobileName = name.contains("rmnet") || name.contains("ccmni") || name.contains("ppp") || name.contains("wwan") || name.contains("rmnet_data")
                 
-                val addresses = ni.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val addr = addresses.nextElement()
+                if (type == "Wi-Fi" && !isWifiName) continue
+                if (type == "Mobile" && !isMobileName) continue
+                
+                for (addr in java.util.Collections.list(ni.inetAddresses)) {
                     if (!addr.isLoopbackAddress && addr is Inet4Address) {
                         return addr.hostAddress ?: "127.0.0.1"
+                    }
+                }
+            }
+
+            // Second pass fallback: if Wi-Fi requested but not found, try to find any interface that is NOT mobile and has IPv4
+            if (type == "Wi-Fi") {
+                for (ni in interfaces) {
+                    val name = ni.name.lowercase()
+                    val isMobileName = name.contains("rmnet") || name.contains("ccmni") || name.contains("ppp") || name.contains("wwan") || name.contains("rmnet_data")
+                    if (!isMobileName && !ni.isLoopback) {
+                        for (addr in java.util.Collections.list(ni.inetAddresses)) {
+                            if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                                return addr.hostAddress ?: "127.0.0.1"
+                            }
+                        }
                     }
                 }
             }
@@ -1774,6 +1812,23 @@ class MainActivity : AppCompatActivity() {
             // Ignore
         }
         return "127.0.0.1"
+    }
+
+    private fun logAllInterfaces() {
+        try {
+            val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
+            val sb = StringBuilder("Discovered Interfaces:\n")
+            for (ni in interfaces) {
+                val addresses = java.util.Collections.list(ni.inetAddresses)
+                val ipv4List = addresses.filterIsInstance<Inet4Address>().map { it.hostAddress }
+                if (ipv4List.isNotEmpty()) {
+                    sb.append("  • ${ni.name} (Up: ${ni.isUp}): ${ipv4List.joinToString(", ")}\n")
+                }
+            }
+            ServerConsole.log(LogCategory.UI, sb.toString().trimEnd())
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.UI, "Error listing interfaces: ${e.message}")
+        }
     }
 
     private fun launchBatterySettings() {
@@ -1826,6 +1881,7 @@ class MainActivity : AppCompatActivity() {
         allPill.setTextColor(Color.parseColor(if (isAll) "#FFFFFF" else "#888888"))
 
         refreshIpAddress()
+        logAllInterfaces()
     }
 
     private fun hasNotificationPermission(): Boolean {
