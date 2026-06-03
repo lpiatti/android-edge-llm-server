@@ -89,6 +89,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var serverConsole: CollapsibleLogConsole
     private var selectedBindingInterface = "All"
 
+    private lateinit var serverAddressLabel: TextView
+    private lateinit var statsRequestsText: TextView
+    private lateinit var statsSpeedText: TextView
+    private lateinit var statsTokensText: TextView
+    private lateinit var statsLoadTimeText: TextView
+
     // Tab 3 (API Test Suite) Views
     private lateinit var openAiPill: Button
     private lateinit var ollamaPill: Button
@@ -163,6 +169,7 @@ class MainActivity : AppCompatActivity() {
                 updateStickyStatus()
                 updateModelUiState()
                 updateServerUiState()
+                updateServerTelemetry()
             }
             statusUpdateHandler.postDelayed(this, 1000)
         }
@@ -217,8 +224,12 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         statusUpdateHandler.post(statusUpdateRunnable)
-        if (currentViewState == "PERMISSION" && hasNotificationPermission() && hasStoragePermission()) {
-            checkPermissionsAndProceed()
+        if (currentViewState == "PERMISSION") {
+            if (hasNotificationPermission() && hasStoragePermission()) {
+                checkPermissionsAndProceed()
+            } else {
+                setupPermissionOnboardingView()
+            }
         }
         if (currentViewState == "MAIN") {
             updateStickyStatus()
@@ -554,15 +565,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateStickyStatus() {
         if (!::statusIsland.isInitialized) return
+        val activeHost = LlmServerService.activeBindHost
+        val displayHost = if (activeHost == "0.0.0.0") getLocalIpAddress() else activeHost
         statusIsland.update(
             serverRunning = LlmServerService.isServiceRunning,
-            bindHost = LlmServerService.activeBindHost,
+            bindHost = displayHost,
             modelLoaded = ModelManager.isModelLoaded,
             isMock = ModelManager.isMockMode,
             modelName = ModelManager.activeModelName,
             modelLoading = ModelManager.isLoading,
             isGpu = ModelManager.isGpuActive
         )
+    }
+
+    private fun updateServerTelemetry() {
+        if (!::statsRequestsText.isInitialized) return
+        val stats = com.edge.llm.server.util.ServerStats
+        statsRequestsText.text = "${stats.totalRequests} (Active: ${stats.activeConnections})"
+        statsSpeedText.text = if (stats.lastGenerationSpeedTps > 0) "%.1f tok/s".format(stats.lastGenerationSpeedTps) else "0.0 tok/s"
+        statsTokensText.text = "${stats.totalTokensGenerated} tokens"
+        statsLoadTimeText.text = if (stats.modelLoadTimeMs > 0) "%.2f s".format(stats.modelLoadTimeMs / 1000.0) else "N/A"
     }
 
     // --- TAB 1: MODEL ENGINE LAYOUT (Wrapped inside ScrollView) ---
@@ -848,15 +870,18 @@ class MainActivity : AppCompatActivity() {
     private fun updateModelUiState() {
         val loaded = ModelManager.isModelLoaded
         val loading = ModelManager.isLoading
-        
-        initModelBtn.setVisualEnabled(!loaded && !loading)
-        stopModelBtn.setVisualEnabled(loaded && !loading)
-        
-        mockPillModel.setVisualEnabled(!loaded && !loading)
-        realPillModel.setVisualEnabled(!loaded && !loading)
-        cpuModelPill.setVisualEnabled(!loaded && !loading)
-        gpuModelPill.setVisualEnabled(!loaded && !loading)
-        pickerBtn.setVisualEnabled(!loaded && !loading)
+        val serverActive = LlmServerService.isServiceRunning
+
+        val canConfig = !loaded && !loading && !serverActive
+
+        initModelBtn.setVisualEnabled(canConfig)
+        stopModelBtn.setVisualEnabled(loaded && !loading && !serverActive)
+
+        mockPillModel.setVisualEnabled(canConfig)
+        realPillModel.setVisualEnabled(canConfig)
+        cpuModelPill.setVisualEnabled(canConfig)
+        gpuModelPill.setVisualEnabled(canConfig)
+        pickerBtn.setVisualEnabled(canConfig)
 
         modelTabBtn.setVisualEnabled(!loading)
         serverTabBtn.setVisualEnabled(!loading)
@@ -927,6 +952,27 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 16)
         }
         serverContainer.addView(sectionTitle)
+
+        // Server Address Highlight Panel
+        serverAddressLabel = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#FF8800"))
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(16, 16, 16, 16)
+            text = "🔴 SERVER OFFLINE"
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1C1C1C"))
+                cornerRadius = 12f
+                setStroke(2, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+        serverContainer.addView(serverAddressLabel)
 
         // Start / Stop Button
         toggleServerBtn = Button(this).apply {
@@ -1007,6 +1053,62 @@ class MainActivity : AppCompatActivity() {
         }
         serverContainer.addView(batteryBtn)
 
+        // 5. Statistics Telemetry Card
+        val statsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 20)
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1C1C1C"))
+                cornerRadius = 12f
+                setStroke(2, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+
+        val statsTitle = TextView(this).apply {
+            text = "📊 Live Daemon Telemetry"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        }
+        statsCard.addView(statsTitle)
+
+        val createStatsRow = { labelStr: String, valRef: (TextView) -> Unit ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 4, 0, 4)
+            }
+            val lbl = TextView(this).apply {
+                text = labelStr
+                textSize = 11f
+                setTextColor(Color.parseColor("#888888"))
+                val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+                layoutParams = params
+            }
+            val v = TextView(this).apply {
+                text = "0"
+                textSize = 11f
+                setTextColor(Color.parseColor("#00FF66"))
+                typeface = Typeface.MONOSPACE
+            }
+            valRef(v)
+            row.addView(lbl)
+            row.addView(v)
+            row
+        }
+
+        statsCard.addView(createStatsRow("Processed Requests (Active):") { statsRequestsText = it })
+        statsCard.addView(createStatsRow("Tokens Generation Speed:") { statsSpeedText = it })
+        statsCard.addView(createStatsRow("Total Tokens Generated:") { statsTokensText = it })
+        statsCard.addView(createStatsRow("Model Engine Load Duration:") { statsLoadTimeText = it })
+
+        serverContainer.addView(statsCard)
+
         serverConsole = CollapsibleLogConsole(this, "Daemon Console Logs (Last 3 entries):")
         serverContainer.addView(serverConsole)
     }
@@ -1040,6 +1142,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateServerUiState() {
         val active = LlmServerService.isServiceRunning
         val modelLoaded = ModelManager.isModelLoaded
+        val modelLoading = ModelManager.isLoading
 
         if (active) {
             toggleServerBtn.text = "Stop HTTP Server"
@@ -1049,8 +1152,9 @@ class MainActivity : AppCompatActivity() {
             mobilePill.setVisualEnabled(false)
             allPill.setVisualEnabled(false)
 
-            initModelBtn.setVisualEnabled(false)
-            stopModelBtn.setVisualEnabled(false)
+            val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") getLocalIpAddress() else LlmServerService.activeBindHost
+            serverAddressLabel.text = "🟢 SERVER ACTIVE\nURL: http://$activeHost:8080"
+            serverAddressLabel.setTextColor(Color.parseColor("#00FF66"))
         } else {
             toggleServerBtn.text = "Start HTTP Server"
             toggleServerBtn.setBackgroundColor(Color.parseColor("#3366BB"))
@@ -1059,11 +1163,16 @@ class MainActivity : AppCompatActivity() {
             mobilePill.setVisualEnabled(true)
             allPill.setVisualEnabled(true)
 
-            initModelBtn.setVisualEnabled(!modelLoaded)
-            stopModelBtn.setVisualEnabled(modelLoaded)
+            val ip = when (selectedBindingInterface) {
+                "Wi-Fi" -> getInterfaceIp("Wi-Fi")
+                "Mobile" -> getInterfaceIp("Mobile")
+                else -> getLocalIpAddress()
+            }
+            serverAddressLabel.text = "🔴 SERVER OFFLINE\nWill bind to: http://$ip:8080"
+            serverAddressLabel.setTextColor(Color.parseColor("#FF8800"))
         }
 
-        toggleServerBtn.setVisualEnabled(modelLoaded)
+        toggleServerBtn.setVisualEnabled(modelLoaded && !modelLoading)
         if (!modelLoaded) {
             toggleServerBtn.text = "Start Server (Load Engine First)"
         }
@@ -1185,6 +1294,11 @@ class MainActivity : AppCompatActivity() {
         chipRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, 12)
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams = params
         }
         
         val hScroller = HorizontalScrollView(this).apply {

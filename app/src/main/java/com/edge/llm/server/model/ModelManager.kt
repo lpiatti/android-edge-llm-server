@@ -97,6 +97,7 @@ object ModelManager {
         isLoading = true
         isGpuActive = false
         loadingError = null
+        val startTime = System.currentTimeMillis()
         ServerConsole.log(LogCategory.ENGINE, "ModelManager: Swapping model state (useMock=$useMock, path=$modelPath, useGpu=$useGpu)...")
         
         try {
@@ -125,6 +126,8 @@ object ModelManager {
                 isGpuActive = useGpu
                 ServerConsole.log(LogCategory.ENGINE, "ModelManager: Successfully loaded and initialized real model: $activeModelName")
             }
+            val duration = System.currentTimeMillis() - startTime
+            com.edge.llm.server.util.ServerStats.modelLoadTimeMs = duration
             true
         } catch (e: Exception) {
             ServerConsole.log(LogCategory.ENGINE, "ModelManager ERROR: Swapping failed: ${e.message}")

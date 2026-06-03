@@ -238,10 +238,13 @@ class CollapsibleLogConsole(context: Context, labelText: String) : LinearLayout(
             }
             background = bg
             
-            val params = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1.0f).apply {
+            // Convert 220dp to pixels for fixed height to support nested ScrollViews
+            val consoleHeight = (220 * context.resources.displayMetrics.density).toInt()
+            val params = LayoutParams(LayoutParams.MATCH_PARENT, consoleHeight).apply {
                 setMargins(0, 8, 0, 0)
             }
             layoutParams = params
+            isNestedScrollingEnabled = true
             addView(logTextView)
         }
         addView(logScrollView)

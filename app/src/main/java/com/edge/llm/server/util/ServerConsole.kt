@@ -87,3 +87,22 @@ object ServerConsole {
         logListener?.invoke(LogEntry("", LogCategory.UI, "CLEAR_LOGS"))
     }
 }
+
+/**
+ * ServerStats: Holds live telemetry metrics for requests, active connections, and inference speed.
+ */
+object ServerStats {
+    @Volatile var totalRequests: Int = 0
+    @Volatile var totalTokensGenerated: Int = 0
+    @Volatile var activeConnections: Int = 0
+    @Volatile var lastGenerationSpeedTps: Double = 0.0
+    @Volatile var modelLoadTimeMs: Long = 0L
+
+    fun reset() {
+        totalRequests = 0
+        totalTokensGenerated = 0
+        activeConnections = 0
+        lastGenerationSpeedTps = 0.0
+    }
+}
+
