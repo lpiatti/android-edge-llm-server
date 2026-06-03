@@ -47,10 +47,10 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         }
         background = backgroundDrawable
 
-        val layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+        val islandParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             setMargins(0, 0, 0, 24)
         }
-        setLayoutParams(layoutParams)
+        setLayoutParams(islandParams)
 
         // Server Status Row
         serverStatusText = TextView(context).apply {
@@ -80,10 +80,10 @@ class StatusIsland(context: Context) : LinearLayout(context) {
 
         val divider = View(context).apply {
             setBackgroundColor(Color.parseColor("#2A2A2A"))
-            val params = LayoutParams(LayoutParams.MATCH_PARENT, 2).apply {
+            val divParams = LayoutParams(LayoutParams.MATCH_PARENT, 2).apply {
                 setMargins(0, 8, 0, 12)
             }
-            layoutParams = params
+            this.layoutParams = divParams
         }
         telemetryLayout.addView(divider)
 

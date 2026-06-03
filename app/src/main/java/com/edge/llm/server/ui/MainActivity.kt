@@ -1671,6 +1671,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openModelFilePicker() {
+        try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+            filePickerLauncher.launch(intent)
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.UI, "Failed to open model file picker: ${e.message}")
+        }
+    }
+
+    private fun updateModelDisplay() {
+        val name = selectedModelName
+        if (selectedModelPath != null) {
+            modelFileLabel.text = "Selected: $name"
+            modelFileLabel.setTextColor(Color.parseColor("#00FF66"))
+        } else {
+            modelFileLabel.text = "Selected: No file selected"
+            modelFileLabel.setTextColor(Color.parseColor("#888888"))
+        }
+    }
+
+    private fun setInterfaceBinding(mode: String) {
+        if (selectedBindingInterface == mode) return
+        selectedBindingInterface = mode
+
+        val isWifi = mode == "Wi-Fi"
+        val isMobile = mode == "Mobile"
+        val isAll = mode == "All"
+
+        wifiPill.setBackgroundColor(Color.parseColor(if (isWifi) "#3366BB" else "#222222"))
+        wifiPill.setTextColor(Color.parseColor(if (isWifi) "#FFFFFF" else "#888888"))
+
+        mobilePill.setBackgroundColor(Color.parseColor(if (isMobile) "#3366BB" else "#222222"))
+        mobilePill.setTextColor(Color.parseColor(if (isMobile) "#FFFFFF" else "#888888"))
+
+        allPill.setBackgroundColor(Color.parseColor(if (isAll) "#3366BB" else "#222222"))
+        allPill.setTextColor(Color.parseColor(if (isAll) "#FFFFFF" else "#888888"))
+
+        refreshIpAddress()
+    }
+
     private fun hasNotificationPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
