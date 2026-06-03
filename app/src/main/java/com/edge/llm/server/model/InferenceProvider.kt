@@ -1,5 +1,6 @@
 package com.edge.llm.server.model
 
+import com.edge.llm.server.util.LogCategory
 import com.edge.llm.server.util.ServerConsole
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -31,7 +32,7 @@ class MockInferenceProvider : InferenceProvider {
 
     override suspend fun initialize(): Boolean = withContext(Dispatchers.Default) {
         isInit = true
-        ServerConsole.log("MockInferenceProvider initialized.")
+        ServerConsole.log(LogCategory.ENGINE, "MockInferenceProvider initialized.")
         true
     }
 
@@ -54,7 +55,7 @@ class MockInferenceProvider : InferenceProvider {
 
     override fun unload() {
         isInit = false
-        ServerConsole.log("MockInferenceProvider unloaded.")
+        ServerConsole.log(LogCategory.ENGINE, "MockInferenceProvider unloaded.")
     }
 }
 
@@ -62,7 +63,10 @@ class MockInferenceProvider : InferenceProvider {
  * LiteRtLmInferenceProvider: A concrete implementation wrapping Google AI Edge's LiteRT-LM native runtime,
  * executing LLM model inference and token flow generation asynchronously.
  */
-class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvider {
+class LiteRtLmInferenceProvider(
+    private val modelPath: String,
+    private val useGpu: Boolean = false
+) : InferenceProvider {
     private var engine: Engine? = null
 
     override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
@@ -71,16 +75,17 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
             if (!file.exists()) {
                 throw Exception("Model file does not exist at absolute path: $modelPath")
             }
-            ServerConsole.log("LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB)...")
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB, GPU=$useGpu)...")
             
-            val config = EngineConfig(modelPath)
+            val backend = if (useGpu) com.google.ai.edge.litertlm.Backend.GPU() else com.google.ai.edge.litertlm.Backend.CPU()
+            val config = EngineConfig(modelPath, backend)
             val newEngine = Engine(config)
             newEngine.initialize()
             engine = newEngine
-            ServerConsole.log("LiteRT-LM: Engine initialized successfully for ${file.name}!")
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Engine initialized successfully for ${file.name}!")
             true
         } catch (e: Exception) {
-            ServerConsole.log("CRITICAL: LiteRT-LM initialization failed: ${e.message}")
+            ServerConsole.log(LogCategory.ENGINE, "CRITICAL: LiteRT-LM initialization failed: ${e.message}")
             throw e
         }
     }
@@ -89,7 +94,7 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val resultBuilder = StringBuilder()
         
-        ServerConsole.log("LiteRT-LM: Running synchronous inference...")
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running synchronous inference...")
         activeEngine.createConversation().use { conversation ->
             // Collect flow tokens synchronously into a string
             conversation.sendMessageAsync(prompt).collect { message ->
@@ -97,27 +102,27 @@ class LiteRtLmInferenceProvider(private val modelPath: String) : InferenceProvid
             }
         }
         val finalAnswer = resultBuilder.toString()
-        ServerConsole.log("LiteRT-LM: Synchronous inference complete (${finalAnswer.length} chars generated)")
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Synchronous inference complete (${finalAnswer.length} chars generated)")
         finalAnswer
     }
 
     override suspend fun generateStream(prompt: String): Flow<String> = flow {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
-        ServerConsole.log("LiteRT-LM: Running streaming inference...")
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running streaming inference...")
         activeEngine.createConversation().use { conversation ->
             conversation.sendMessageAsync(prompt).collect { message ->
                 emit(message.toString())
             }
         }
-        ServerConsole.log("LiteRT-LM: Streaming inference flow completed.")
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Streaming inference flow completed.")
     }.flowOn(Dispatchers.IO)
 
     override fun unload() {
         try {
             engine?.close()
-            ServerConsole.log("LiteRT-LM: Closed native engine reference.")
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Closed native engine reference.")
         } catch (e: Exception) {
-            ServerConsole.log("Error closing LiteRT-LM engine: ${e.message}")
+            ServerConsole.log(LogCategory.ENGINE, "Error closing LiteRT-LM engine: ${e.message}")
         } finally {
             engine = null
         }

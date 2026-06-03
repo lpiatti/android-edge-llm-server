@@ -54,6 +54,7 @@
              This screen allows the user to start, stop, and monitor the server daemon. -->
         <activity
             android:name=".ui.MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
