@@ -140,6 +140,8 @@ Completed:
 Still open / In Progress:
 
 - Phase 5: Server Stabilization and background daemon execution audits (memory optimization, wake lock lifecycle robustness, and Foreground Service persistence).
+- Phase 6: Edge Extensions & Compatibility (Local TTS, Local Embeddings, OpenAI response schemas alignment, Model Hub Manager, TinySD image generation).
+
 
 
 ## Important Development Philosophy

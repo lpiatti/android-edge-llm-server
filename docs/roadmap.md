@@ -112,6 +112,22 @@ Deliverables:
 
 ---
 
+## Phase 6 — Edge Extensions & Compatibility
+
+Status: PLANNED
+
+Goals:
+- Local Text-To-Speech (TTS) endpoint (`/v1/audio/speech`) using native Android TTS engine or lightweight models.
+- Local Embeddings endpoint (`/v1/embeddings`) via compact ONNX/LiteRT models (such as BERT or MiniLM) for offline LAN RAG.
+- OpenAI Response Schema Compliance: Ensure complete matching of all JSON response structures with OpenAI's official specifications.
+- Curated Model Hub Manager: In-app searchable UI list pulling stable model metadata from the Hugging Face [litert-community](https://huggingface.co/litert-community) repository, with automatic downloads, resume capabilities, and SHA256 verification.
+- Lightweight Local Image Generation (`/v1/images/generations`) leveraging compact models (such as TinySD) with RAM safety checks.
+
+Non-Goals / Excluded:
+- GGUF/llama.cpp support: Excluded (KO) to maintain microscopic binary size and avoid complex C++ NDK/JNI compilations.
+
+---
+
 ## Long-Term Direction
 
 Potential future directions:
@@ -119,7 +135,7 @@ Potential future directions:
 - LAN discovery
 - agent integration
 - lightweight orchestration
-- embeddings support
 - tool calling
 - multimodal support
 - distributed edge nodes
+
