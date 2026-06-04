@@ -84,14 +84,14 @@ Status: COMPLETED
 Goals:
 - [x] Milestone 4.1: Integrate LiteRT-LM dependency, configure ProGuard rules, upgrade coroutines/Ktor to 3.0.3, stabilize foreground service across SDKs, and build in-app crash reporter.
 - [x] Milestone 4.2: Implement local public folder scanning, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
-- [ ] Milestone 4.3: UI Refactoring & System File Picker. Add a sticky status island, re-order and re-label tabs (Model Engine, Server Daemon, Test Suite), add collapsible diagnostic console logs, enforce state interlocks, and replace the storage directory scanner with a native System File Picker (`ACTION_OPEN_DOCUMENT`).
+- [x] Milestone 4.3: UI Refactoring & System File Picker. Add a sticky status island, re-order and re-label tabs (Model Engine, Server Daemon, Test Suite), add collapsible diagnostic console logs, enforce state interlocks, and replace the storage directory scanner with a native System File Picker (`ACTION_OPEN_DOCUMENT`).
 
 Deliverables:
 - [x] Aligned build configuration and stable background server running Ktor 3.0.3 and LiteRT-LM on physical devices.
 - [x] Local models directory scanner (Broad fallback scanner) inside MainActivity.
 - [x] Real token generation and inference abstraction.
 - [x] Streaming HTTP responses (OpenAI SSE chunk flows and Ollama stream JSON lines).
-- [ ] Collapsible monospaced log windows, always-visible status island, and native android file picker for `.litertlm` files.
+- [x] Collapsible monospaced log windows, always-visible status island, and native android file picker for `.litertlm` files.
 
 ---
 
