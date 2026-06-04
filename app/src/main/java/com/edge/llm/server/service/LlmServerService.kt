@@ -518,7 +518,7 @@ class LlmServerService : Service() {
     @Serializable
     data class Message(
         val role: String,
-        val content: String
+        val content: String? = ""
     )
 
     @Serializable
@@ -594,7 +594,7 @@ class LlmServerService : Service() {
     @Serializable
     data class OllamaMessage(
         val role: String,
-        val content: String
+        val content: String? = ""
     )
 
     @Serializable

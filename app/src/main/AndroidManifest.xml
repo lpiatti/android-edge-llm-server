@@ -50,6 +50,10 @@
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
 
+        <!-- Native Library Declarations to allow GPU/OpenCL driver access -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
+
         <!-- Main Activity: The single entry point for our control UI panel.
              This screen allows the user to start, stop, and monitor the server daemon. -->
         <activity
