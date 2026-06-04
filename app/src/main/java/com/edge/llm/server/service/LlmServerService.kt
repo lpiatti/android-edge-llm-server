@@ -1,4 +1,4 @@
-package com.edge.llm.server
+package com.edge.llm.server.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.edge.llm.server.model.ModelManager
+import com.edge.llm.server.util.ServerConsole
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
@@ -44,6 +46,7 @@ class LlmServerService : Service() {
         const val NOTIFICATION_ID = 101
         const val CHANNEL_ID = "llm_server_channel"
         const val CHANNEL_NAME = "Edge LLM Daemon Service"
+        const val ACTION_STOP = "com.edge.llm.server.service.ACTION_STOP"
         
         @Volatile
         var isServiceRunning = false
@@ -79,6 +82,12 @@ class LlmServerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            ServerConsole.log("Received STOP action from notification. Shutting down daemon...")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         if (isServiceRunning) {
             ServerConsole.log("Service is already active, ignoring start intent.")
             return START_STICKY
@@ -89,6 +98,9 @@ class LlmServerService : Service() {
         activeBindHost = bindHost
         ServerConsole.log("Starting Foreground Service Daemon bound to $bindHost...")
         
+        // Reset telemetry stats on startup
+        com.edge.llm.server.util.ServerStats.reset()
+
         // 1. Promote to Foreground Service
         startForegroundNotification()
 
@@ -115,11 +127,46 @@ class LlmServerService : Service() {
             manager.createNotificationChannel(channel)
         }
 
+        // Tap content intent to open MainActivity
+        val pm = packageManager
+        val launchIntent = pm.getLaunchIntentForPackage(packageName)
+        val contentPendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+        )
+
+        // Action intent to stop the daemon
+        val stopIntent = Intent(this, LlmServerService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = android.app.PendingIntent.getService(
+            this,
+            0,
+            stopIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            } else {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            }
+        )
+
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Edge LLM Server: ACTIVE")
             .setContentText("Listening on http://$bindHost:8080. Tap to configure.")
             .setSmallIcon(android.R.drawable.sym_def_app_icon)
             .setOngoing(true)
+            .setContentIntent(contentPendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel, 
+                "Stop Server", 
+                stopPendingIntent
+            )
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -131,7 +178,7 @@ class LlmServerService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        ServerConsole.log("Foreground notification posted successfully.")
+        ServerConsole.log("Foreground notification posted successfully with Spotify-style close controls.")
     }
 
     private fun acquireLocks() {
@@ -168,6 +215,7 @@ class LlmServerService : Service() {
                 routing {
                     // Endpoint: /health
                     get("/health") {
+                        com.edge.llm.server.util.ServerStats.totalRequests++
                         val clientIp = call.request.local.remoteHost
                         ServerConsole.log("--> GET /health from $clientIp")
                         
@@ -183,6 +231,7 @@ class LlmServerService : Service() {
 
                     // Endpoint: /v1/models (OpenAI compatibility)
                     get("/v1/models") {
+                        com.edge.llm.server.util.ServerStats.totalRequests++
                         val clientIp = call.request.local.remoteHost
                         ServerConsole.log("--> GET /v1/models from $clientIp")
                         
@@ -198,6 +247,9 @@ class LlmServerService : Service() {
                     // Endpoint: /v1/chat/completions (OpenAI Chat compatibility)
                     post("/v1/chat/completions") {
                         val clientIp = call.request.local.remoteHost
+                        com.edge.llm.server.util.ServerStats.totalRequests++
+                        com.edge.llm.server.util.ServerStats.activeConnections++
+                        val requestTime = System.currentTimeMillis()
                         try {
                             val req = call.receive<ChatCompletionRequest>()
                             ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}, stream=${req.stream}) from $clientIp")
@@ -213,7 +265,10 @@ class LlmServerService : Service() {
                                     val createdTime = System.currentTimeMillis() / 1000
                                     
                                     try {
+                                        var tokenCount = 0
                                         activeProvider.generateStream(lastUserMsg).collect { token ->
+                                            tokenCount++
+                                            com.edge.llm.server.util.ServerStats.totalTokensGenerated++
                                             val chunk = ChatCompletionChunk(
                                                 id = chunkId,
                                                 created = createdTime,
@@ -229,6 +284,10 @@ class LlmServerService : Service() {
                                             val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), chunk)
                                             writeStringUtf8("data: $jsonString\n\n")
                                             flush()
+                                        }
+                                        val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                        if (durationSec > 0) {
+                                            com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
                                         }
                                         // End of stream token
                                         val endChunk = ChatCompletionChunk(
@@ -256,6 +315,12 @@ class LlmServerService : Service() {
                                 }
                             } else {
                                 val answer = activeProvider.generate(lastUserMsg)
+                                val tokenCount = answer.length / 4
+                                com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
+                                val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                if (durationSec > 0) {
+                                    com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
+                                }
                                 
                                 val response = ChatCompletionResponse(
                                     id = "chatcmpl-" + UUID.randomUUID().toString(),
@@ -271,8 +336,8 @@ class LlmServerService : Service() {
                                     ),
                                     usage = Usage(
                                         prompt_tokens = lastUserMsg.length / 4,
-                                        completion_tokens = answer.length / 4,
-                                        total_tokens = (lastUserMsg.length + answer.length) / 4
+                                        completion_tokens = tokenCount,
+                                        total_tokens = (lastUserMsg.length / 4) + tokenCount
                                     )
                                 )
                                 
@@ -283,6 +348,8 @@ class LlmServerService : Service() {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing chat completions: $errorMsg")
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                        } finally {
+                            com.edge.llm.server.util.ServerStats.activeConnections--
                         }
                     }
 
@@ -290,6 +357,7 @@ class LlmServerService : Service() {
 
                     // Endpoint: /api/tags (Ollama models list)
                     get("/api/tags") {
+                        com.edge.llm.server.util.ServerStats.totalRequests++
                         val clientIp = call.request.local.remoteHost
                         ServerConsole.log("--> GET /api/tags from $clientIp")
                         
@@ -305,6 +373,9 @@ class LlmServerService : Service() {
                     // Endpoint: /api/chat (Ollama chat completion)
                     post("/api/chat") {
                         val clientIp = call.request.local.remoteHost
+                        com.edge.llm.server.util.ServerStats.totalRequests++
+                        com.edge.llm.server.util.ServerStats.activeConnections++
+                        val requestTime = System.currentTimeMillis()
                         try {
                             val req = call.receive<OllamaChatRequest>()
                             ServerConsole.log("--> POST /api/chat (model=${req.model}, stream=${req.stream}) from $clientIp")
@@ -318,7 +389,10 @@ class LlmServerService : Service() {
                             if (req.stream == true) {
                                 call.respondBytesWriter(contentType = ContentType.Application.Json) {
                                     try {
+                                        var tokenCount = 0
                                         activeProvider.generateStream(lastUserMsg).collect { token ->
+                                            tokenCount++
+                                            com.edge.llm.server.util.ServerStats.totalTokensGenerated++
                                             val chunk = OllamaChatResponse(
                                                 model = ModelManager.activeModelName,
                                                 created_at = formatter.format(java.util.Date()),
@@ -329,6 +403,10 @@ class LlmServerService : Service() {
                                             val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), chunk)
                                             writeStringUtf8("$jsonString\n")
                                             flush()
+                                        }
+                                        val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                        if (durationSec > 0) {
+                                            com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
                                         }
                                         // Final chunk
                                         val finalChunk = OllamaChatResponse(
@@ -350,6 +428,12 @@ class LlmServerService : Service() {
                                 }
                             } else {
                                 val answer = activeProvider.generate(lastUserMsg)
+                                val tokenCount = answer.length / 4
+                                com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
+                                val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                if (durationSec > 0) {
+                                    com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
+                                }
                                 
                                 val response = OllamaChatResponse(
                                     model = ModelManager.activeModelName,
@@ -365,6 +449,8 @@ class LlmServerService : Service() {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing Ollama chat: $errorMsg")
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                        } finally {
+                            com.edge.llm.server.util.ServerStats.activeConnections--
                         }
                     }
                 }
@@ -432,7 +518,7 @@ class LlmServerService : Service() {
     @Serializable
     data class Message(
         val role: String,
-        val content: String
+        val content: String? = ""
     )
 
     @Serializable
@@ -508,7 +594,7 @@ class LlmServerService : Service() {
     @Serializable
     data class OllamaMessage(
         val role: String,
-        val content: String
+        val content: String? = ""
     )
 
     @Serializable

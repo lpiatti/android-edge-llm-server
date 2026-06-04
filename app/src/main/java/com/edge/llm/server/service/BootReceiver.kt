@@ -1,9 +1,10 @@
-package com.edge.llm.server
+package com.edge.llm.server.service
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.edge.llm.server.util.ServerConsole
 
 /**
  * BootReceiver: Automatically starts our LlmServerService when the Android device powers on.

@@ -1,6 +1,8 @@
-package com.edge.llm.server
+package com.edge.llm.server.model
 
 import android.os.Environment
+import com.edge.llm.server.util.LogCategory
+import com.edge.llm.server.util.ServerConsole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -29,6 +31,10 @@ object ModelManager {
 
     @Volatile
     var isLoading: Boolean = false
+        private set
+
+    @Volatile
+    var isGpuActive: Boolean = false
         private set
 
     @Volatile
@@ -83,10 +89,16 @@ object ModelManager {
      * Loads either the mock provider or initializes the real LiteRT-LM engine.
      * Operates strictly on Dispatchers.IO to protect foreground/main thread responsiveness.
      */
-    suspend fun loadModel(modelPath: String?, useMock: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun loadModel(
+        modelPath: String?,
+        useMock: Boolean,
+        useGpu: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         isLoading = true
+        isGpuActive = false
         loadingError = null
-        ServerConsole.log("ModelManager: Swapping model state (useMock=$useMock, path=$modelPath)...")
+        val startTime = System.currentTimeMillis()
+        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Swapping model state (useMock=$useMock, path=$modelPath, useGpu=$useGpu)...")
         
         try {
             // Unload whatever is currently active
@@ -99,24 +111,31 @@ object ModelManager {
                 activeModelName = "mock-model"
                 isMockMode = true
                 isModelLoaded = true
-                ServerConsole.log("ModelManager: Successfully swapped to Mock Model Mode.")
+                isGpuActive = false
+                ServerConsole.log(LogCategory.ENGINE, "ModelManager: Successfully swapped to Mock Model Mode.")
             } else {
                 if (modelPath.isNullOrEmpty()) {
                     throw IllegalArgumentException("LiteRT-LM requires a valid model file path")
                 }
-                val realProvider = LiteRtLmInferenceProvider(modelPath)
+                val realProvider = LiteRtLmInferenceProvider(modelPath, useGpu)
                 realProvider.initialize() // Can throw exception if file invalid
                 activeProvider = realProvider
                 activeModelName = File(modelPath).name
                 isMockMode = false
                 isModelLoaded = true
-                ServerConsole.log("ModelManager: Successfully loaded and initialized real model: $activeModelName")
+                isGpuActive = useGpu
+                ServerConsole.log(LogCategory.ENGINE, "ModelManager: Successfully loaded and initialized real model: $activeModelName")
             }
+            val duration = System.currentTimeMillis() - startTime
+            com.edge.llm.server.util.ServerStats.modelLoadTimeMs = duration
             true
         } catch (e: Exception) {
-            ServerConsole.log("ModelManager ERROR: Swapping failed: ${e.message}")
-            loadingError = e.message ?: e.toString()
+            val errorMsg = e.message ?: e.toString()
+            val hint = if (useGpu) " (Tip: If GPU load fails, try disabling GPU and using CPU mode. Many Mali/Exynos/Adreno GPUs lack OpenCL compatibility with LiteRT-LM)" else ""
+            ServerConsole.log(LogCategory.ENGINE, "ModelManager ERROR: Swapping failed: $errorMsg$hint")
+            loadingError = errorMsg
             isModelLoaded = false
+            isGpuActive = false
             
             // Fallback to active mock to prevent service crash
             try {
@@ -138,11 +157,11 @@ object ModelManager {
      * Unloads the active model completely, returns to offline state, and triggers GC to release memory.
      */
     fun unloadActiveModel() {
-        ServerConsole.log("ModelManager: Unloading model and cleaning native heap reference...")
+        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Unloading model and cleaning native heap reference...")
         try {
             activeProvider.unload()
         } catch (e: Exception) {
-            ServerConsole.log("Error unloading provider: ${e.message}")
+            ServerConsole.log(LogCategory.ENGINE, "Error unloading provider: ${e.message}")
         } finally {
             // Revert to non-initialized mock
             activeProvider = MockInferenceProvider()
@@ -150,11 +169,12 @@ object ModelManager {
             isMockMode = true
             isModelLoaded = false
             isLoading = false
+            isGpuActive = false
             loadingError = null
             
             // Clean heap
             System.gc()
-            ServerConsole.log("ModelManager: Garbage collection triggered. Memory cleaned.")
+            ServerConsole.log(LogCategory.ENGINE, "ModelManager: Garbage collection triggered. Memory cleaned.")
         }
     }
 }
