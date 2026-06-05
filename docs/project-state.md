@@ -58,7 +58,7 @@ The initial architecture document is maintained in docs/architecture.md.
 - **Minimum SDK:** API 29 (Android 10.0) — allows repurposing older devices.
 - **Target SDK:** API 34 (Android 14.0) — complies with modern security and foreground service requirements.
 - **Deployment Profile:** Dedicated server mode (permanently on AC power, dedicated high-perf Wi-Fi, low concurrent app usage).
-- **Stability Rules:** Enforced by [daemon-stability-guidelines.md](file:///c:/python_sources/android-edge-llm-server/docs/daemon-stability-guidelines.md).
+- **Stability Rules:** Enforced by [daemon-stability-guidelines.md](daemon-stability-guidelines.md).
 
 ## Operational Workflow
 

@@ -8,13 +8,13 @@ To explore the architecture, guidelines, and technical history of this project, 
 
 | Document | Description |
 |---|---|
-| 📋 [Project State](file:///c:/python_sources/android-edge-llm-server/docs/project-state.md) | Current project phase, immediate milestones, and operational status. |
-| 🗺️ [Roadmap](file:///c:/python_sources/android-edge-llm-server/docs/roadmap.md) | Phased milestones from bootstrap to full background stabilization. |
-| 🏛️ [Architecture Notes](file:///c:/python_sources/android-edge-llm-server/docs/architecture.md) | Decoupled server boundaries (Background Foreground Service vs Programmatic UI). |
-| 🛡️ [Daemon Stability Guidelines](file:///c:/python_sources/android-edge-llm-server/docs/daemon-stability-guidelines.md) | Wakelocks, battery-saver bypasses, memory management (LMK), and self-healing. |
-| 📜 [Architectural Decision Log (ADR)](file:///c:/python_sources/android-edge-llm-server/docs/decision-log.md) | Chronological history of major design, SDK, and framework selections. |
-| 🔬 [Garden Architecture Analysis](file:///c:/python_sources/android-edge-llm-server/docs/garden-analysis.md) | Technical comparison between Google MediaPipe and LiteRT-LM runtimes. |
-| 🤖 [Agent Operating Contract](file:///c:/python_sources/android-edge-llm-server/AGENTS.md) | Development rules, branch workflows, and constraints for coding agents. |
+| 📋 [Project State](docs/project-state.md) | Current project phase, immediate milestones, and operational status. |
+| 🗺️ [Roadmap](docs/roadmap.md) | Phased milestones from bootstrap to full background stabilization. |
+| 🏛️ [Architecture Notes](docs/architecture.md) | Decoupled server boundaries (Background Foreground Service vs Programmatic UI). |
+| 🛡️ [Daemon Stability Guidelines](docs/daemon-stability-guidelines.md) | Wakelocks, battery-saver bypasses, memory management (LMK), and self-healing. |
+| 📜 [Architectural Decision Log (ADR)](docs/decision-log.md) | Chronological history of major design, SDK, and framework selections. |
+| 🔬 [Garden Architecture Analysis](docs/garden-analysis.md) | Technical comparison between Google MediaPipe and LiteRT-LM runtimes. |
+| 🤖 [Agent Operating Contract](AGENTS.md) | Development rules, branch workflows, and constraints for coding agents. |
 
 ## Core Features
 
@@ -64,4 +64,4 @@ curl http://<ANDROID_DEVICE_IP>:8080/api/chat \
 ## Licensing
 
 This repository is licensed under the **PolyForm Strict License 1.0.0**. 
-You are permitted to inspect, read, and evaluate the source code for personal, non-commercial purposes. Redistribution of the code, commercial use, or creation of derivative works is strictly prohibited. See the [LICENSE](file:///c:/python_sources/android-edge-llm-server/LICENSE) file for the full terms.
+You are permitted to inspect, read, and evaluate the source code for personal, non-commercial purposes. Redistribution of the code, commercial use, or creation of derivative works is strictly prohibited. See the [LICENSE](LICENSE) file for the full terms.

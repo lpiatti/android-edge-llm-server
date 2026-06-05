@@ -25,7 +25,7 @@ Required reading order:
 6. AGENTS.md
 7. .agents/README.md
 8. the task-specific file under .agents/, when one is provided
-9. tool-specific instruction files such as CLAUDE.md or CODEX.md, when relevant
+9. CLAUDE.md or CODEX.md (which are simple redirects to this file)
 
 The startup status block must contain:
 
@@ -60,7 +60,7 @@ Repository files are authoritative in this order:
 5. docs/index.md
 6. AGENTS.md
 7. Files under .agents/
-8. Tool-specific instruction files such as CLAUDE.md or CODEX.md
+8. Redirect entrypoints (CLAUDE.md or CODEX.md)
 
 If repository content conflicts with chat history, use repository content.
 If a required file is missing, report it instead of inferring its contents.
@@ -125,19 +125,19 @@ After making changes, agents should report:
 
 ## Current Phase Guardrail
 
-The current repository state is **Phase 1 (Garden Analysis)** and transitioning to **Phase 4 (Runtime Integration)**, since Phase 0, Phase 2, and Phase 3 are fully COMPLETED.
+The current repository state is **Phase 5 (Server Stabilization)** transitioning to **Phase 6 (Edge Extensions & Compatibility)**, since Phase 0 through Phase 4 are fully COMPLETED.
 
 During the current phase, agents may work on:
-- Architectural and dependency analysis of Google AI Edge / Garden components
-- Concept modeling and integration strategy documents
-- Preparing structures for loading local quantized models (weights)
-- Developing interface-level APIs matching runtime providers
-- Enhancing the dynamic test harness to log real inference latency/metrics
+- Optimizing background Foreground Service (FGS) persistence, Wakelocks, and WiFiLocks.
+- Fine-tuning memory consumption (LMK prevention) and component lifecycle safety.
+- Designing and implementing Local Text-to-Speech (TTS), Local Embeddings (ONNX/LiteRT), and matching OpenAI response JSON schemas.
+- Building the Curated Model Hub list/downloader and TinySD image generation.
+- Enhancing raw HTTP diagnostic log console dumps.
 
 During the current phase, agents must not work on:
-- Large-scale unquantized model imports directly to Git (weights must be kept external or referenced via download scripts)
-- Final production releases or distribution before completing the stability audits
-- Breaking decoupled boundaries between MainActivity and LlmServerService
+- Native GGUF/llama.cpp support (officially excluded as KO).
+- Hardcoding external download links or credentials in the application codebase.
+- Breaking decoupled boundaries between MainActivity and LlmServerService.
 
 ## Architectural Guardrails
 

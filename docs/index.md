@@ -14,7 +14,7 @@ The repository is the source of truth for project state, roadmap, architectural 
 | docs/architecture.md | Initial conceptual architecture and boundaries | Active |
 | docs/daemon-stability-guidelines.md | Platform SDK cut-offs, dedicated server profile, and background stability strategies | Active |
 | docs/decision-log.md | Architecture decision registry from project bootstrap to present | Active |
-| [docs/garden-analysis.md](file:///c:/python_sources/android-edge-llm-server/docs/garden-analysis.md) | Architectural analysis of Google AI Edge/Garden components, component maps, and integration roadmap | Active |
+| [docs/garden-analysis.md](garden-analysis.md) | Architectural analysis of Google AI Edge/Garden components, component maps, and integration roadmap | Active |
 
 ## Agent Instructions
 
