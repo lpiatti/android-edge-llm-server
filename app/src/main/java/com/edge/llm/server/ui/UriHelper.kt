@@ -77,21 +77,44 @@ object UriHelper {
             return resolvedPath
         }
 
-        // 3. Fallback to copy the file to the app's internal cache
-        // Warn the user since LLM files are large
-        ServerConsole.log("UriHelper: Direct resolution failed. Copying model file to private cache folder (might take time)...")
+        // 3. Query document name and size to check for a local match (Zero-Copy)
+        var displayName = "model.litertlm"
+        var fileSize = -1L
         try {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            var displayName = "model.litertlm"
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                     if (nameIndex != -1) {
-                        displayName = it.getString(nameIndex)
+                        displayName = cursor.getString(nameIndex)
+                    }
+                    val sizeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    if (sizeIndex != -1) {
+                        fileSize = cursor.getLong(sizeIndex)
                     }
                 }
             }
+        } catch (e: Exception) {
+            ServerConsole.log("UriHelper: Querying details failed: ${e.message}")
+        }
 
+        // Try to find a local match in local model folders to avoid copying
+        try {
+            ServerConsole.log("UriHelper: Checking for local copy of $displayName (size=$fileSize) to avoid copying...")
+            val localModels = com.edge.llm.server.model.ModelManager.listLocalModels()
+            val match = localModels.firstOrNull { file ->
+                file.name == displayName && (fileSize <= 0 || file.length() == fileSize)
+            }
+            if (match != null) {
+                ServerConsole.log("UriHelper: Found local match (Zero-Copy): ${match.absolutePath}")
+                return match.absolutePath
+            }
+        } catch (e: Exception) {
+            ServerConsole.log("UriHelper: Match check failed: ${e.message}")
+        }
+
+        // 4. Fallback to copy the file to the app's internal cache if no local match is found
+        ServerConsole.log("UriHelper: No local match found. Copying model file to private cache folder (might take time)...")
+        try {
             // Create target file in internal storage cache
             val cacheDir = File(context.cacheDir, "models")
             if (!cacheDir.exists()) cacheDir.mkdirs()

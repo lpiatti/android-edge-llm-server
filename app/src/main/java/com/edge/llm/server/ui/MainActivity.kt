@@ -135,15 +135,33 @@ class MainActivity : AppCompatActivity() {
                     // Ignore if not supported
                 }
                 
-                val path = UriHelper.resolveUriToPath(this, uri)
-                if (path != null) {
-                    selectedModelPath = path
-                    selectedModelName = File(path).name
-                    ServerConsole.log(LogCategory.UI, "Selected model: $selectedModelName (path: $path)")
-                    updateModelDisplay()
-                } else {
-                    ServerConsole.log(LogCategory.UI, "Failed to resolve local path from picker.")
-                }
+                // Show resolving progress on the button to prevent freeze visuals
+                pickerBtn.isEnabled = false
+                pickerBtn.text = "⏳ Resolving file path (checking local match)..."
+                
+                Thread {
+                    val path = UriHelper.resolveUriToPath(this, uri)
+                    runOnUiThread {
+                        pickerBtn.isEnabled = true
+                        pickerBtn.text = "📂 Select Model File (.litertlm)"
+                        if (path != null) {
+                            selectedModelPath = path
+                            selectedModelName = File(path).name
+                            ServerConsole.log(LogCategory.UI, "Selected model: $selectedModelName (path: $path)")
+                            
+                            // Save selected model path and name to SharedPreferences
+                            getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putString("selected_model_path", path)
+                                .putString("selected_model_name", selectedModelName)
+                                .apply()
+                                
+                            updateModelDisplay()
+                        } else {
+                            ServerConsole.log(LogCategory.UI, "Failed to resolve local path from picker.")
+                        }
+                    }
+                }.start()
             }
         }
     }
@@ -170,6 +188,16 @@ class MainActivity : AppCompatActivity() {
                 updateModelUiState()
                 updateServerUiState()
                 updateServerTelemetry()
+
+                // Dynamically maintain clean_shutdown based on whether daemon or model is active
+                val active = LlmServerService.isServiceRunning
+                val loaded = ModelManager.isModelLoaded
+                val loading = ModelManager.isLoading
+                val isDirtyState = active || loaded || loading
+                getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("clean_shutdown", !isDirtyState)
+                    .apply()
             }
             statusUpdateHandler.postDelayed(this, 1000)
         }
@@ -177,6 +205,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize persistent logs file in ServerConsole
+        ServerConsole.logFile = File(filesDir, "persistent_logs.txt")
 
         // Uncaught exceptions catcher
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -206,6 +237,33 @@ class MainActivity : AppCompatActivity() {
 
         // Evaluate crash diagnostics threshold
         val crashFile = File(filesDir, "crash_log.txt")
+        
+        // Check SharedPreferences for dirty shutdown (native crash / LMK)
+        val prefs = getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+        val cleanShutdown = prefs.getBoolean("clean_shutdown", true)
+        
+        if (!cleanShutdown && !crashFile.exists()) {
+            try {
+                java.io.FileOutputStream(crashFile).use { fos ->
+                    java.io.PrintStream(fos).use { ps ->
+                        ps.println("⚠️ SYSTEM DIAGNOSTICS - POTENTIAL NATIVE CRASH OR LMK")
+                        ps.println("Device: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
+                        ps.println("Timestamp: ${java.util.Date()}")
+                        ps.println("\nDiagnostic Heuristics:")
+                        ps.println("The application terminated unexpectedly without a clean shutdown.")
+                        ps.println("This is highly indicative of a native C++ crash (e.g. LiteRT segment fault) or")
+                        ps.println("a Low Memory Killer (LMK) event where the OS killed the process to reclaim RAM.")
+                        ps.println("\nRecommendations:")
+                        ps.println("1. If using GPU backend on a device with a Mali GPU (e.g., Exynos), disable GPU and use CPU.")
+                        ps.println("2. Make sure the model file is quantized (4-bit) and under 1.8GB for 6GB/8GB RAM devices.")
+                        ps.println("3. Ensure that other heavy background applications are closed.")
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+
         if (crashFile.exists()) {
             val elapsed = System.currentTimeMillis() - crashFile.lastModified()
             val twoHours = 2 * 60 * 60 * 1000
@@ -217,6 +275,9 @@ class MainActivity : AppCompatActivity() {
                 crashFile.delete()
             }
         }
+
+        // Mark current session as running (dirty until stopped cleanly)
+        prefs.edit().putBoolean("clean_shutdown", false).apply()
 
         checkPermissionsAndProceed()
     }
@@ -321,6 +382,10 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#0099CC"))
             setOnClickListener {
                 File(filesDir, "crash_log.txt").delete()
+                getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("clean_shutdown", true)
+                    .apply()
                 checkPermissionsAndProceed()
             }
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
@@ -518,9 +583,39 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        loadPersistedSettings()
         switchTab(0)
         refreshConsoleLogs()
         refreshPayloadEditor()
+    }
+
+    private fun loadPersistedSettings() {
+        val prefs = getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+        
+        // 1. Mock vs Real Engine Selection
+        val isMock = prefs.getBoolean("is_mock_engine", true)
+        // Bypass return guard by setting inverse first
+        isMockEngineSelected = !isMock
+        setModelMockMode(isMock)
+        
+        // 2. GPU vs CPU Backend Selection
+        val isGpu = prefs.getBoolean("is_gpu_backend", false)
+        isGpuSelected = !isGpu
+        setHardwareBackend(isGpu)
+        
+        // 3. Last Selected Model Path
+        val modelPath = prefs.getString("selected_model_path", null)
+        val modelName = prefs.getString("selected_model_name", "No file selected")
+        if (modelPath != null && File(modelPath).exists()) {
+            selectedModelPath = modelPath
+            selectedModelName = modelName
+            updateModelDisplay()
+        }
+        
+        // 4. Last Selected Binding Interface
+        val bindingInterface = prefs.getString("selected_interface", "All") ?: "All"
+        selectedBindingInterface = "" // Force update
+        setInterfaceBinding(bindingInterface)
     }
 
     private fun switchTab(index: Int) {
@@ -785,6 +880,11 @@ class MainActivity : AppCompatActivity() {
         if (isMockEngineSelected == isMock) return
         isMockEngineSelected = isMock
 
+        getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("is_mock_engine", isMock)
+            .apply()
+
         mockPillModel.setBackgroundColor(Color.parseColor(if (isMock) "#3366BB" else "#222222"))
         mockPillModel.setTextColor(Color.parseColor(if (isMock) "#FFFFFF" else "#888888"))
         realPillModel.setBackgroundColor(Color.parseColor(if (!isMock) "#3366BB" else "#222222"))
@@ -797,6 +897,11 @@ class MainActivity : AppCompatActivity() {
     private fun setHardwareBackend(isGpu: Boolean) {
         if (isGpuSelected == isGpu) return
         isGpuSelected = isGpu
+
+        getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("is_gpu_backend", isGpu)
+            .apply()
 
         cpuModelPill.setBackgroundColor(Color.parseColor(if (!isGpu) "#3366BB" else "#222222"))
         cpuModelPill.setTextColor(Color.parseColor(if (!isGpu) "#FFFFFF" else "#888888"))
@@ -1867,9 +1972,18 @@ class MainActivity : AppCompatActivity() {
         if (selectedBindingInterface == mode) return
         selectedBindingInterface = mode
 
+        getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putString("selected_interface", mode)
+            .apply()
+
         val isWifi = mode == "Wi-Fi"
         val isMobile = mode == "Mobile"
         val isAll = mode == "All"
+
+        if (isMobile) {
+            ServerConsole.log(LogCategory.UI, "⚠️ MOBILE BIND NOTICE: Binding to Mobile Cellular Interface is subject to Carrier-Grade NAT (CGNAT) and carrier firewall blocks. External devices on other networks will not be able to query the server on this IP.")
+        }
 
         wifiPill.setBackgroundColor(Color.parseColor(if (isWifi) "#3366BB" else "#222222"))
         wifiPill.setTextColor(Color.parseColor(if (isWifi) "#FFFFFF" else "#888888"))
