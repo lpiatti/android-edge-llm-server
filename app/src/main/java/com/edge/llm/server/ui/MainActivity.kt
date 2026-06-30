@@ -605,7 +605,7 @@ class MainActivity : AppCompatActivity() {
         
         // 3. Last Selected Model Path
         val modelPath = prefs.getString("selected_model_path", null)
-        val modelName = prefs.getString("selected_model_name", "No file selected")
+        val modelName = prefs.getString("selected_model_name", "No file selected") ?: "No file selected"
         if (modelPath != null && File(modelPath).exists()) {
             selectedModelPath = modelPath
             selectedModelName = modelName
