@@ -65,9 +65,9 @@ jobs:
           gradle-version: '8.4'
           cache-overwrite-existing: true
 
-      - name: Build Debug APK
-        # We run the gradle build command directly since the setup-gradle action places gradle in the PATH
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Run Unit Tests and Build Debug APK
+        # Run unit tests before building the debug APK
+        run: gradle testDebugUnitTest assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4

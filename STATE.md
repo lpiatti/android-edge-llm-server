@@ -15,17 +15,13 @@ dispositivo fisico Android; inferenza LiteRT-LM reattiva via API compatibili Ope
 
 ## Stato attuale
 
-Progetto adottato nel Metodo Agorà da repository Git autonomo esistente (branch
-`feature/server-stabilization-improvements`). Il codice Android (`app/`) dispone di
-motore HTTP Ktor 3.0.3 su Kotlin 2.2.0, mock e binding parziali LiteRT-LM, UI Kotlin
-programmatica a tre tab, crash catcher in-app e gestione wake/wifi lock.
-È presente l'esito della consulenza Fable 5 (`fable5/`) che riorganizza il lavoro in
-8 sessioni operative (S0–S8) con Definition of Done e backlog esplicito, sotto licenza
-PolyForm Noncommercial 1.0.0.
+Progetto strutturato secondo il Metodo Agorà v3.3. Completata l'implementazione della Sessione S1 su branch `feature/api-full-context`: prompt assembly multi-turn completo con template Gemma (`PromptBuilder`), inoltro parametri di campionamento (`temperature`, `top_p`, `max_tokens`/`num_predict`) sia su `/v1/chat/completions` che su `/api/chat`, suite di test unitari JVM (`PromptBuilderTest`), rimozione delle pause forzate GC in memory alert, aggiornamento del workflow CI per eseguire `testDebugUnitTest` prima della build APK, e script di benchmark prefill (`scripts/`).
 
 ## Prossimo passo
 
-- Eseguire Sessione S1: implementazione semantica corretta API (full context dell'array `messages` e passaggio parametri di campionamento a LiteRT-LM) su branch `feature/api-full-context` secondo [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md).
+- Eseguire push del branch `feature/api-full-context` e verificare l'esito verde della CI su GitHub Actions (unit test + APK).
+- Eseguire la verifica multi-turn su dispositivo fisico con `scripts/test_multiturn.ps1` e il benchmark di prefill con `scripts/benchmark_prefill.ps1`.
+- Procedere con la Sessione S2: `RequestQueue` serializzata single-worker FIFO con HTTP 429 su overflow.
 
 ## Decisioni e vincoli attivi
 
