@@ -63,5 +63,5 @@ curl http://<ANDROID_DEVICE_IP>:8080/api/chat \
 
 ## Licensing
 
-This repository is licensed under the **PolyForm Strict License 1.0.0**. 
-You are permitted to inspect, read, and evaluate the source code for personal, non-commercial purposes. Redistribution of the code, commercial use, or creation of derivative works is strictly prohibited. See the [LICENSE](LICENSE) file for the full terms.
+This repository is licensed under the **PolyForm Noncommercial License 1.0.0**.
+You are free to use, modify, share, and build upon this software for any **noncommercial** purpose — personal projects, research, education, and nonprofit use. Commercial use rights remain reserved to the author. Contributions are welcome: by submitting a contribution you agree it is licensed to the project owner under the same terms. See the [LICENSE](LICENSE) file for the full text.

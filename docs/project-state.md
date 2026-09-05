@@ -112,11 +112,15 @@ Current structure:
 
 ## Immediate Priorities
 
-1. Implement in-app Bottom Tab Navigation (MainActivity UI)
-2. Expand LlmServerService with local Ktor Ollama mock endpoints (/api/tags and /api/chat)
-3. Create interactive Dynamic API Client Test Suite inside Tab 2
-4. Perform Garden repository architectural analysis (Phase 1)
-5. Integrate real runtime progressively (Phase 4)
+The operational plan for the current phase is `fable5/roadmap-sessioni.md` (consultancy
+outcome, 2026-07-05): sessions S0–S8, each with explicit scope and verifiable acceptance
+criteria. Next up:
+
+1. S0 — Documentation alignment (`fable5/correzioni-doc.md`)
+2. S1 — Correct API semantics: process the full `messages` array, parameter passthrough, prefill benchmark
+3. S2 — Request queue (serialize inference, 429 on overflow)
+
+Everything beyond S8 is declared backlog in `fable5/backlog.md`.
 
 ## Bootstrap Progress
 

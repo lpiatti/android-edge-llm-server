@@ -1,0 +1,39 @@
+# Normalizza i fine riga nel repository.
+#
+# Senza queste regole basta che un tool riscriva un file — Excel che risalva un
+# CSV, un editor che cambia impostazione, un export — perche' git veda migliaia
+# di righe cambiate che non cambiano nulla. Il risultato e' un `git status`
+# sporco a ogni sessione, in cui le modifiche vere non si distinguono piu' dal
+# rumore.
+#
+# Regola: nel repository si conserva LF; al checkout Windows riceve CRLF dove
+# serve agli strumenti effettivamente in uso.
+
+* text=auto
+
+# Aperti da strumenti Windows: CRLF sul disco
+*.csv  text eol=crlf
+*.sql  text eol=crlf
+*.txt  text eol=crlf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Metodo, documentazione e configurazione: LF ovunque
+.gitattributes text eol=lf
+.gitignore     text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
+# Binari: mai riscrivere
+*.zip  binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.xlsx binary
+*.docx binary
+*.pptx binary
