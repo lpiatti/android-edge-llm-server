@@ -25,9 +25,7 @@ PolyForm Noncommercial 1.0.0.
 
 ## Prossimo passo
 
-- Eseguire Sessione S0: allineamento della documentazione interna secondo
-  [`fable5/correzioni-doc.md`](fable5/correzioni-doc.md) (aggiornamento riferimenti
-  architettura e roadmap).
+- Eseguire Sessione S1: implementazione semantica corretta API (full context dell'array `messages` e passaggio parametri di campionamento a LiteRT-LM) su branch `feature/api-full-context` secondo [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md).
 
 ## Decisioni e vincoli attivi
 

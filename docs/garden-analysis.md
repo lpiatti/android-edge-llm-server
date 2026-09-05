@@ -1,5 +1,8 @@
 # Google AI Edge / Garden Architecture Analysis
 
+> [!NOTE]
+> **Historical note (2026-07-05):** The recommendation below to start with MediaPipe tasks-genai was superseded by ADR 12 in [docs/decision-log.md](decision-log.md) — LiteRT-LM was integrated first. The multi-provider abstraction advice remains valid.
+
 This document completes **Phase 1 (Garden Analysis)** of the Android Edge LLM Server project. It outlines the architectural landscape, component maps, dependency signatures, model lifecycle workflows, and coupling controls required to transition safely into **Phase 4 (Runtime Integration)**.
 
 ---

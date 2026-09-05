@@ -35,6 +35,14 @@ tramite GitHub Actions CI (`.github/workflows/android-ci.yml`) su feature branch
   checkpoint rimangono rigorosamente all'interno di questo repository.
 - Non modificare il codice sorgente Android o i file Gradle se non specificamente
   richiesto dal task.
+- **Perimetro operativo sessioni:** Lavorare esclusivamente sulla sessione assegnata
+  definita in [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md). Qualsiasi altra
+  modifica richiede l'approvazione del proprietario del progetto. Non avviare voci
+  del backlog ([`fable5/backlog.md`](fable5/backlog.md)) in modo opportunistico.
+- **Riferimenti documentali obbligatori:** Prima di proporre modifiche o piani,
+  consultare in ordine: `README.md`, `docs/project-state.md`, `docs/roadmap.md`,
+  `docs/architecture.md`, `docs/index.md`, [`fable5/index.md`](fable5/index.md),
+  [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md) e `.agents/README.md`.
 
 ## Regole specifiche
 
