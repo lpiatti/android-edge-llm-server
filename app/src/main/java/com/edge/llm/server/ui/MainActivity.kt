@@ -2254,6 +2254,15 @@ class MainActivity : AppCompatActivity() {
         refreshSystemLogsView()
     }
 
+    private fun refreshIpAddress() {
+        val ip = when (selectedBindingInterface) {
+            "Wi-Fi" -> getInterfaceIp("Wi-Fi")
+            "Mobile" -> getInterfaceIp("Mobile")
+            else -> getLocalIpAddress()
+        }
+        ServerConsole.log(LogCategory.UI, "Resolved active socket bind address: $ip")
+    }
+
     private fun getLocalIpAddress(): String {
         try {
             val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())

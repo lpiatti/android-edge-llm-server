@@ -123,10 +123,10 @@ class LiteRtLmInferenceProvider(
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val resultBuilder = StringBuilder()
         val conversationConfig = if (temperature != null || topP != null) {
-            val tempFloat = (temperature ?: 0.7).toFloat()
-            val topPFloat = (topP ?: 0.95).toFloat()
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (temp=$tempFloat, top_p=$topPFloat)")
-            ConversationConfig(samplerConfig = SamplerConfig(topP = topPFloat, temperature = tempFloat))
+            val tempVal = temperature ?: 0.7
+            val topPVal = topP ?: 0.95
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (topK=40, temp=$tempVal, top_p=$topPVal)")
+            ConversationConfig(samplerConfig = SamplerConfig(topK = 40, topP = topPVal, temperature = tempVal))
         } else {
             ConversationConfig()
         }
@@ -151,10 +151,10 @@ class LiteRtLmInferenceProvider(
     ): Flow<String> = flow {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val conversationConfig = if (temperature != null || topP != null) {
-            val tempFloat = (temperature ?: 0.7).toFloat()
-            val topPFloat = (topP ?: 0.95).toFloat()
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (temp=$tempFloat, top_p=$topPFloat)")
-            ConversationConfig(samplerConfig = SamplerConfig(topP = topPFloat, temperature = tempFloat))
+            val tempVal = temperature ?: 0.7
+            val topPVal = topP ?: 0.95
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (topK=40, temp=$tempVal, top_p=$topPVal)")
+            ConversationConfig(samplerConfig = SamplerConfig(topK = 40, topP = topPVal, temperature = tempVal))
         } else {
             ConversationConfig()
         }
