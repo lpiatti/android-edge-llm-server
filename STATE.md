@@ -19,8 +19,8 @@ Progetto strutturato secondo il Metodo Agorà v3.3. Completata l'implementazione
 
 ## Prossimo passo
 
-- Eseguire push del branch `feature/api-full-context` e verificare l'esito verde della CI su GitHub Actions (unit test + APK).
-- Eseguire la verifica multi-turn su dispositivo fisico con `scripts/test_multiturn.ps1` e il benchmark di prefill con `scripts/benchmark_prefill.ps1`.
+- Eseguire la verifica multi-turn su dispositivo fisico con `scripts/test_multiturn.ps1` (o `.sh`) installando l'APK compilato dalla CI della PR #7.
+- Eseguire il benchmark di prefill con `scripts/benchmark_prefill.ps1` e registrare le metriche TTFT.
 - Procedere con la Sessione S2: `RequestQueue` serializzata single-worker FIFO con HTTP 429 su overflow.
 
 ## Decisioni e vincoli attivi
