@@ -15,13 +15,27 @@ dispositivo fisico Android; inferenza LiteRT-LM reattiva via API compatibili Ope
 
 ## Stato attuale
 
-Progetto strutturato secondo il Metodo Agorà v3.3. Completata l'implementazione della Sessione S1 su branch `feature/api-full-context`: prompt assembly multi-turn completo con template Gemma (`PromptBuilder`), inoltro parametri di campionamento (`temperature`, `top_p`, `max_tokens`/`num_predict`) sia su `/v1/chat/completions` che su `/api/chat`, suite di test unitari JVM (`PromptBuilderTest`), rimozione delle pause forzate GC in memory alert, aggiornamento del workflow CI per eseguire `testDebugUnitTest` prima della build APK, e script di benchmark prefill (`scripts/`).
+Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 e stabilizzazione motore su branch `feature/request-queue`:
+1. **RequestQueue FIFO Serializzata**: Gestore single-worker della concorrenza (capacità 4 slot, timeout 120s) con esclusione mutua su `generate()` e `generateStream()`, e ritorno di HTTP 429 (`rate_limit_exceeded` / `Retry-After: 30`) sia su overflow che su timeout per OpenAI (`/v1/chat/completions`) e Ollama (`/api/chat`).
+2. **Suite di Test Unitari**: `RequestQueueTest` con 5 casi di test JUnit 4 passati con successo.
+3. **Stabilizzazione LiteRT-LM 0.16.1 & Coroutines 1.11.0**: Risolto il crash fatale `NoSuchMethodError: SendChannel.close$default` su `sendMessageAsync.onDone()` allineando esplicitamente `kotlinx-coroutines-core:1.11.0` e `kotlinx-coroutines-android:1.11.0` in `app/build.gradle.kts`. Inferenza funzionante con successo su Google Pixel 9 (8 token generati: "Ciao! Come posso aiutarti oggi?").
+4. **Parsing Stream SSE & Quick Shell Response Card**: Risolto l'output dei chunk SSE grezzi (`data: {"choices":[{"delta":...}]}`). Implementato `extractContentFromChunk` e creata la `quickShellResponseCard` con streaming testo in tempo reale, conteggio token/latenza, pulsante `[ COPY ]` e formattazione evidenziata `<<< ASSISTANT OUTPUT:` nella console test.
+5. **Bonifica Totale Cartella Modelli**: Estesa la scansione in `ModelManager.purgeCacheFiles()` affinché ogni file non `.litertlm` (inclusi residui `.bin`, `.tmp`, `.cache` lasciati da vecchie esecuzioni) presente in `/sdcard/Download/llm-server/models/` venga rimosso incondizionatamente sia all'avvio che alla chiusura.
+6. **Telemetria RAM Chiara & Trasparenza GC**: Riformattata la visualizzazione della RAM fisica in GB con indicazione della cache Linux del sistema operativo (`%.1f GB free / %.1f GB total (%d%% OS cached)`), affiancata all'Heap del processo JVM (`$usedMem MB / $maxMem MB`). Azione Trim aggiornata per quantificare con precisione i kilobyte/megabyte recuperati dal garbage collector, con nota esplicativa sul rilascio dinamico della memoria da parte del kernel Linux.
+7. **Hardware & SoC Profiling**: Integrato il rilevamento automatico delle specifiche hardware del dispositivo (`ModelManager.getHardwareProfile()`): modello esatto, SoC/Chipset, architettura e core CPU, supporto driver GPU OpenCL, versione Android. Visualizzato in una card dedicata in Tab 1 (`> DEVICE HARDWARE & SOC SPECS`).
+8. **RAM Audit & Deep Sweep (4GB Ready)**: Implementato il pulsante `[ 🔍 AUDIT & DEEP SWEEP (4GB READY) ]` e il dialog modale TUI con doppio check:
+   - Valutazione di fattibilità del modello rispetto al picco di allocazione (pesi + shader scratch GPU + KV-cache).
+   - Guida operativa per vecchi dispositivi/Samsung One UI (attivazione RAM Plus 8GB, limite processi background, profilo aereo + Wi-Fi).
+   - Esecuzione di `KILL_BACKGROUND_PROCESSES` per terminare app terze in cache, purge cache e GC forzato con riscontro numerico della RAM recuperata.
 
 ## Prossimo passo
 
-- Eseguire la verifica multi-turn su dispositivo fisico con `scripts/test_multiturn.ps1` (o `.sh`) installando l'APK compilato dalla CI della PR #7.
-- Eseguire il benchmark di prefill con `scripts/benchmark_prefill.ps1` e registrare le metriche TTFT.
-- Procedere con la Sessione S2: `RequestQueue` serializzata single-worker FIFO con HTTP 429 su overflow.
+- Eseguire commit e push su branch `feature/request-queue` (PR #8).
+- Verificare il passaggio dei test e la compilazione dell'APK debug su GitHub Actions CI (`android-ci.yml`).
+- Collaudo su Google Pixel 9 e Galaxy S20 FE:
+  - Verifica della card hardware con visualizzazione immediata di SoC, CPU core e driver OpenCL.
+  - Test del dialog `[ 🔍 AUDIT & DEEP SWEEP ]` e verifica del recupero RAM post-sweep.
+  - Verifica invio prompt e visualizzazione in chiaro del testo assistente nella Quick Shell.
 
 ## Decisioni e vincoli attivi
 
@@ -53,4 +67,4 @@ Nessuna.
 
 ## Ultimo aggiornamento
 
-2026-09-05
+2026-09-06

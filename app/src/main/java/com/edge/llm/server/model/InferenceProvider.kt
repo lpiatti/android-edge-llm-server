@@ -2,8 +2,10 @@ package com.edge.llm.server.model
 
 import com.edge.llm.server.util.LogCategory
 import com.edge.llm.server.util.ServerConsole
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -87,7 +89,8 @@ class MockInferenceProvider : InferenceProvider {
  */
 class LiteRtLmInferenceProvider(
     private val modelPath: String,
-    private val useGpu: Boolean = false
+    private val useGpu: Boolean = false,
+    private val cacheDir: String? = null
 ) : InferenceProvider {
     private var engine: Engine? = null
 
@@ -97,10 +100,18 @@ class LiteRtLmInferenceProvider(
             if (!file.exists()) {
                 throw Exception("Model file does not exist at absolute path: $modelPath")
             }
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB, GPU=$useGpu)...")
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB, GPU=$useGpu, cacheDir=${cacheDir ?: "default"})...")
             
+            // Ensure cache directory exists if specified
+            if (!cacheDir.isNullOrEmpty()) {
+                val dir = File(cacheDir)
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+            }
+
             val backend = if (useGpu) com.google.ai.edge.litertlm.Backend.GPU() else com.google.ai.edge.litertlm.Backend.CPU()
-            val config = EngineConfig(modelPath, backend)
+            val config = EngineConfig(modelPath = modelPath, backend = backend, cacheDir = cacheDir)
             val newEngine = Engine(config)
             newEngine.initialize()
             engine = newEngine
@@ -120,13 +131,17 @@ class LiteRtLmInferenceProvider(
     ): String = withContext(Dispatchers.IO) {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val resultBuilder = StringBuilder()
-        
-        if (temperature != null || topP != null || maxTokens != null) {
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        val conversationConfig = if (temperature != null || topP != null) {
+            val tempVal = temperature ?: 0.7
+            val topPVal = topP ?: 0.95
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (topK=40, temp=$tempVal, top_p=$topPVal)")
+            ConversationConfig(samplerConfig = SamplerConfig(topK = 40, topP = topPVal, temperature = tempVal))
+        } else {
+            ConversationConfig()
         }
         
         ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running synchronous inference (prompt chars: ${prompt.length})...")
-        activeEngine.createConversation().use { conversation ->
+        activeEngine.createConversation(conversationConfig).use { conversation ->
             // Collect flow tokens synchronously into a string
             conversation.sendMessageAsync(prompt).collect { message ->
                 resultBuilder.append(message.toString())
@@ -144,11 +159,16 @@ class LiteRtLmInferenceProvider(
         maxTokens: Int?
     ): Flow<String> = flow {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
-        if (temperature != null || topP != null || maxTokens != null) {
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        val conversationConfig = if (temperature != null || topP != null) {
+            val tempVal = temperature ?: 0.7
+            val topPVal = topP ?: 0.95
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (topK=40, temp=$tempVal, top_p=$topPVal)")
+            ConversationConfig(samplerConfig = SamplerConfig(topK = 40, topP = topPVal, temperature = tempVal))
+        } else {
+            ConversationConfig()
         }
         ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running streaming inference (prompt chars: ${prompt.length})...")
-        activeEngine.createConversation().use { conversation ->
+        activeEngine.createConversation(conversationConfig).use { conversation ->
             conversation.sendMessageAsync(prompt).collect { message ->
                 emit(message.toString())
             }

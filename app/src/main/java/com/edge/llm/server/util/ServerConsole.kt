@@ -113,6 +113,7 @@ object ServerStats {
     @Volatile var totalRequests: Int = 0
     @Volatile var totalTokensGenerated: Int = 0
     @Volatile var activeConnections: Int = 0
+    @Volatile var queuedRequests: Int = 0
     @Volatile var lastGenerationSpeedTps: Double = 0.0
     @Volatile var modelLoadTimeMs: Long = 0L
 
@@ -120,6 +121,7 @@ object ServerStats {
         totalRequests = 0
         totalTokensGenerated = 0
         activeConnections = 0
+        queuedRequests = 0
         lastGenerationSpeedTps = 0.0
     }
 }

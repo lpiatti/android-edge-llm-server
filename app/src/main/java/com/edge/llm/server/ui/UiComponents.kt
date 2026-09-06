@@ -39,16 +39,16 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         gravity = Gravity.CENTER_VERTICAL
         setPadding(32, 24, 32, 24)
 
-        // Rounded corners and subtle dark outline border
+        // Sharp terminal border and dark background
         val backgroundDrawable = GradientDrawable().apply {
-            setColor(Color.parseColor("#1E1E1E"))
-            cornerRadius = 20f
-            setStroke(2, Color.parseColor("#2A2A2A"))
+            setColor(Color.parseColor("#161616"))
+            cornerRadius = 8f
+            setStroke(1, Color.parseColor("#2A2A2A"))
         }
         background = backgroundDrawable
 
         val islandParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            setMargins(0, 0, 0, 24)
+            setMargins(0, 0, 0, 16)
         }
         setLayoutParams(islandParams)
 
@@ -56,7 +56,7 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         serverStatusText = TextView(context).apply {
             textSize = 12f
             setTextColor(Color.parseColor("#FF4444"))
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            typeface = Typeface.MONOSPACE
             text = "● SERVER: OFFLINE"
         }
         addView(serverStatusText)
@@ -65,9 +65,9 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         modelStatusText = TextView(context).apply {
             textSize = 12f
             setTextColor(Color.parseColor("#FF4444"))
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            typeface = Typeface.MONOSPACE
             text = "● ENGINE: UNLOADED"
-            setPadding(0, 8, 0, 0)
+            setPadding(0, 6, 0, 0)
         }
         addView(modelStatusText)
 
@@ -75,13 +75,13 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         telemetryLayout = LinearLayout(context).apply {
             orientation = VERTICAL
             visibility = View.GONE
-            setPadding(0, 16, 0, 0)
+            setPadding(0, 14, 0, 0)
         }
 
         val divider = View(context).apply {
             setBackgroundColor(Color.parseColor("#2A2A2A"))
-            val divParams = LayoutParams(LayoutParams.MATCH_PARENT, 2).apply {
-                setMargins(0, 8, 0, 12)
+            val divParams = LayoutParams(LayoutParams.MATCH_PARENT, 1).apply {
+                setMargins(0, 6, 0, 10)
             }
             this.layoutParams = divParams
         }
@@ -91,7 +91,7 @@ class StatusIsland(context: Context) : LinearLayout(context) {
             textSize = 11f
             setTextColor(Color.parseColor("#888888"))
             typeface = Typeface.MONOSPACE
-            text = "Memory: Loading..."
+            text = "JVM Heap: Loading..."
         }
         telemetryLayout.addView(memoryText)
 
@@ -99,8 +99,8 @@ class StatusIsland(context: Context) : LinearLayout(context) {
             textSize = 11f
             setTextColor(Color.parseColor("#888888"))
             typeface = Typeface.MONOSPACE
-            text = "CPU Temp: 38.5°C (Simulated)"
-            setPadding(0, 6, 0, 0)
+            text = "Inference Queue: 0/4 Slots"
+            setPadding(0, 4, 0, 0)
         }
         telemetryLayout.addView(cpuText)
 
@@ -109,7 +109,7 @@ class StatusIsland(context: Context) : LinearLayout(context) {
             setTextColor(Color.parseColor("#888888"))
             typeface = Typeface.MONOSPACE
             text = "Bind Adapter: Unknown"
-            setPadding(0, 6, 0, 0)
+            setPadding(0, 4, 0, 0)
         }
         telemetryLayout.addView(interfaceText)
 
@@ -132,10 +132,26 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         val runtime = Runtime.getRuntime()
         val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
         val maxMem = runtime.maxMemory() / 1024 / 1024
-        memoryText.text = "JVM Heap: $usedMem MB / Max: $maxMem MB"
+        val ramPrefix = try {
+            val rep = com.edge.llm.server.model.ModelManager.getSystemMemoryInfo(context)
+            "RAM: %.1fGB free (%d%% OS) | ".format(rep.availMemGb, rep.percentUsed)
+        } catch (e: Exception) {
+            ""
+        }
+        memoryText.text = "${ramPrefix}JVM Heap: $usedMem MB / $maxMem MB"
         
         val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") "All (0.0.0.0)" else LlmServerService.activeBindHost
         interfaceText.text = "Bind Interface: $activeHost"
+
+        val queueCount = com.edge.llm.server.util.ServerStats.queuedRequests
+        cpuText.text = "Inference Queue: $queueCount/4 Slots"
+        cpuText.setTextColor(
+            when {
+                queueCount >= 4 -> Color.parseColor("#FF4444")
+                queueCount > 0 -> Color.parseColor("#FF8800")
+                else -> Color.parseColor("#00FF66")
+            }
+        )
     }
 
     /**
@@ -210,10 +226,11 @@ class CollapsibleLogConsole(context: Context, labelText: String) : LinearLayout(
         headerRow.addView(label)
 
         toggleButton = Button(context).apply {
-            text = "▲ Hide Console"
-            setTextColor(Color.parseColor("#3366BB"))
+            text = "[ ▲ HIDE CONSOLE ]"
+            setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.TRANSPARENT)
-            textSize = 11f
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, 0)
             setOnClickListener { toggleVisibility() }
         }
@@ -233,7 +250,7 @@ class CollapsibleLogConsole(context: Context, labelText: String) : LinearLayout(
         logScrollView = ScrollView(context).apply {
             val bg = GradientDrawable().apply {
                 setColor(Color.parseColor("#0A0A0A"))
-                cornerRadius = 8f
+                cornerRadius = 6f
                 setStroke(1, Color.parseColor("#2A2A2A"))
             }
             background = bg
@@ -254,10 +271,10 @@ class CollapsibleLogConsole(context: Context, labelText: String) : LinearLayout(
         isExpanded = !isExpanded
         if (isExpanded) {
             logScrollView.visibility = View.VISIBLE
-            toggleButton.text = "▲ Hide Console"
+            toggleButton.text = "[ ▲ HIDE CONSOLE ]"
         } else {
             logScrollView.visibility = View.GONE
-            toggleButton.text = "▼ Show Console"
+            toggleButton.text = "[ ▼ SHOW CONSOLE ]"
         }
     }
 
@@ -278,4 +295,6 @@ class CollapsibleLogConsole(context: Context, labelText: String) : LinearLayout(
     fun clear() {
         logTextView.text = ""
     }
+
+    fun getText(): String = logTextView.text.toString()
 }
