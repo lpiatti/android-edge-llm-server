@@ -132,7 +132,13 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         val runtime = Runtime.getRuntime()
         val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
         val maxMem = runtime.maxMemory() / 1024 / 1024
-        memoryText.text = "JVM Heap: $usedMem MB / Max: $maxMem MB"
+        val ramPrefix = try {
+            val rep = com.edge.llm.server.model.ModelManager.getSystemMemoryInfo(context)
+            "RAM: ${rep.availMemMb}MB free (${rep.percentUsed}% used) | "
+        } catch (e: Exception) {
+            ""
+        }
+        memoryText.text = "${ramPrefix}JVM: $usedMem MB / $maxMem MB"
         
         val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") "All (0.0.0.0)" else LlmServerService.activeBindHost
         interfaceText.text = "Bind Interface: $activeHost"

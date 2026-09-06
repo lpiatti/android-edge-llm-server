@@ -255,6 +255,16 @@ class MainActivity : AppCompatActivity() {
         }
         setContentView(rootLayout)
 
+        // Automatically purge temporary cache files and orphan artifacts on application startup
+        try {
+            val purgeRes = ModelManager.purgeCacheFiles(this)
+            if (purgeRes.filesDeleted > 0) {
+                ServerConsole.log(LogCategory.UI, "Startup Cache Cleanup: Cleared ${purgeRes.filesDeleted} files (${purgeRes.bytesFreed / 1024 / 1024} MB freed)")
+            }
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.UI, "Startup Cache Cleanup warning: ${e.message}")
+        }
+
         // Evaluate crash diagnostics threshold
         val crashFile = File(filesDir, "crash_log.txt")
         
@@ -324,12 +334,80 @@ class MainActivity : AppCompatActivity() {
         statusUpdateHandler.removeCallbacks(statusUpdateRunnable)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        statusUpdateHandler.removeCallbacks(statusUpdateRunnable)
+        testTimerHandler.removeCallbacks(testTimerRunnable)
+        try {
+            ModelManager.purgeCacheFiles(this)
+            ModelManager.trimMemoryAndCollectGarbage()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
     private fun checkPermissionsAndProceed() {
         if (hasNotificationPermission() && hasStoragePermission()) {
             setupMainDashboardView()
         } else {
             setupPermissionOnboardingView()
         }
+    }
+
+    // --- RAM Health Card Component ---
+
+    private fun createRamHealthCard(): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#181818"))
+            setPadding(20, 16, 20, 16)
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#181818"))
+                cornerRadius = 6f
+                setStroke(1, Color.parseColor("#333333"))
+            }
+            background = bg
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+
+        val memReport = ModelManager.getSystemMemoryInfo(this)
+        val ramTitle = TextView(this).apply {
+            text = "[ RAM HEALTH CHECK ]"
+            textSize = 11f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+        }
+        card.addView(ramTitle)
+
+        val ramDetails = TextView(this).apply {
+            text = "Physical RAM: ${memReport.availMemMb} MB free / ${memReport.totalMemMb} MB total (${memReport.percentUsed}% used)"
+            textSize = 10f
+            setTextColor(if (memReport.availMemMb < 1500) Color.parseColor("#FFBB33") else Color.parseColor("#888888"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 4, 0, 8)
+        }
+        card.addView(ramDetails)
+
+        val trimBtn = Button(this).apply {
+            text = "[ 🧹 TRIM SYSTEM MEMORY & GC ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            setOnClickListener {
+                ModelManager.trimMemoryAndCollectGarbage()
+                val updated = ModelManager.getSystemMemoryInfo(this@MainActivity)
+                ramDetails.text = "Physical RAM: ${updated.availMemMb} MB free / ${updated.totalMemMb} MB total (${updated.percentUsed}% used)"
+                ramDetails.setTextColor(if (updated.availMemMb < 1500) Color.parseColor("#FFBB33") else Color.parseColor("#888888"))
+                Toast.makeText(this@MainActivity, "Memory trimmed: ${updated.availMemMb} MB free", Toast.LENGTH_SHORT).show()
+            }
+        }
+        card.addView(trimBtn)
+
+        return card
     }
 
     // --- VIEW 1: CRASH DIAGNOSTICS VIEW ---
@@ -368,14 +446,19 @@ class MainActivity : AppCompatActivity() {
                 setTextIsSelectable(true)
             }
             addView(tv)
-            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f)
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f).apply {
+                setMargins(0, 0, 0, 16)
+            }
             layoutParams = params
         }
         rootLayout.addView(logScroller)
 
+        // Embed RAM Health Card into Crash Diagnostics View
+        rootLayout.addView(createRamHealthCard())
+
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 24, 0, 8)
+            setPadding(0, 8, 0, 8)
             gravity = Gravity.CENTER
         }
 
@@ -403,9 +486,9 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 File(filesDir, "crash_log.txt").delete()
                 getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
-                    .edit()
-                    .putBoolean("clean_shutdown", true)
-                    .apply()
+                .edit()
+                .putBoolean("clean_shutdown", true)
+                .apply()
                 checkPermissionsAndProceed()
             }
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
@@ -436,10 +519,13 @@ class MainActivity : AppCompatActivity() {
             text = "To serve edge inference stably in the background (24/7 on AC power), the daemon requires storage access to load models and notification permissions to hold execution locks."
             textSize = 13f
             setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 32)
+            setPadding(0, 0, 0, 24)
             gravity = Gravity.CENTER
         }
         rootLayout.addView(descView)
+
+        // Embed RAM Health Card into Permission Setup View
+        rootLayout.addView(createRamHealthCard())
 
         // Card 1: Notification Permission
         val hasNotif = hasNotificationPermission()
@@ -874,6 +960,89 @@ class MainActivity : AppCompatActivity() {
         actionsRow.addView(stopModelBtn)
         modelContainer.addView(actionsRow)
 
+        // Memory & Cache Management Card
+        val memoryCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#161616"))
+                cornerRadius = 8f
+                setStroke(1, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+        }
+
+        val memTitle = TextView(this).apply {
+            text = "> MEMORY & CACHE MANAGEMENT"
+            textSize = 11f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 8)
+        }
+        memoryCard.addView(memTitle)
+
+        val memStatsTv = TextView(this).apply {
+            val report = ModelManager.getSystemMemoryInfo(this@MainActivity)
+            val runtime = Runtime.getRuntime()
+            val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            val maxMem = runtime.maxMemory() / 1024 / 1024
+            text = "Device RAM: ${report.availMemMb} MB free / ${report.totalMemMb} MB total (${report.percentUsed}% used)\nJVM Heap:   $usedMem MB / $maxMem MB max"
+            textSize = 10f
+            setTextColor(Color.parseColor("#888888"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 12)
+        }
+        memoryCard.addView(memStatsTv)
+
+        val memBtnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val trimBtn = Button(this).apply {
+            text = "[ 🧹 TRIM RAM & GC ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener {
+                ModelManager.trimMemoryAndCollectGarbage()
+                val updated = ModelManager.getSystemMemoryInfo(this@MainActivity)
+                val runtime = Runtime.getRuntime()
+                val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+                val maxMem = runtime.maxMemory() / 1024 / 1024
+                memStatsTv.text = "Device RAM: ${updated.availMemMb} MB free / ${updated.totalMemMb} MB total (${updated.percentUsed}% used)\nJVM Heap:   $usedMem MB / $maxMem MB max"
+                Toast.makeText(this@MainActivity, "RAM trimmed: ${updated.availMemMb} MB free", Toast.LENGTH_SHORT).show()
+            }
+        }
+        memBtnRow.addView(trimBtn)
+
+        val purgeBtn = Button(this).apply {
+            text = "[ 🗑️ PURGE CACHE ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener {
+                val res = ModelManager.purgeCacheFiles(this@MainActivity)
+                val mbFreed = res.bytesFreed / (1024.0 * 1024.0)
+                Toast.makeText(this@MainActivity, "Purged ${res.filesDeleted} files (%.2f MB freed)".format(mbFreed), Toast.LENGTH_LONG).show()
+            }
+        }
+        memBtnRow.addView(purgeBtn)
+        memoryCard.addView(memBtnRow)
+
+        modelContainer.addView(memoryCard)
+
         val engineNote = TextView(this).apply {
             text = "> Terminal Note: Model execution runs in the background. Full API testing, direct chat prompts, and queue benchmarks are in the [TESTER] tab."
             textSize = 10f
@@ -935,7 +1104,8 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 kotlinx.coroutines.runBlocking {
-                    ModelManager.loadModel(path, isMock, isGpu)
+                    val cacheDir = ModelManager.getPrivateCacheDirectory(this@MainActivity).absolutePath
+                    ModelManager.loadModel(path, isMock, isGpu, cacheDir)
                 }
                 runOnUiThread {
                     ServerConsole.log(LogCategory.UI, "Engine Setup: Model loaded successfully.")
@@ -954,7 +1124,7 @@ class MainActivity : AppCompatActivity() {
     private fun unloadEngine() {
         lockUiForModelLoading(true)
         Thread {
-            ModelManager.unloadActiveModel()
+            ModelManager.unloadActiveModel(this@MainActivity)
             runOnUiThread {
                 ServerConsole.log(LogCategory.UI, "Engine Setup: Model unloaded.")
                 lockUiForModelLoading(false)

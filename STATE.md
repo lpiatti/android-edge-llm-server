@@ -15,24 +15,22 @@ dispositivo fisico Android; inferenza LiteRT-LM reattiva via API compatibili Ope
 
 ## Stato attuale
 
-Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 su branch `feature/request-queue`:
-1. **RequestQueue FIFO Serializzata**: Gestore single-worker della concorrenza (capacità 4 slot, timeout 120s) con esclusione mutua su `generate()` e `generateStream()`, e ritorno di HTTP 429 (`rate_limit_exceeded` / `Retry-After: 30`) sia su overflow che su timeout sia per OpenAI (`/v1/chat/completions`) che Ollama (`/api/chat`).
-2. **Suite di Test Unitari**: `RequestQueueTest` con 5 casi di test JUnit 4 (singola esecuzione, sequenza FIFO, overflow a 4 slot, timeout di attesa, lock mantenuto durante lo stream).
-3. **Upgrade LiteRT-LM 0.16.1**: Aggiornato `litertlm-android` da 0.11.0 a 0.16.1 in `app/build.gradle.kts`, abilitato il campionamento dinamico via `SamplerConfig(temperature, topP)` e sbloccata la gestione avanzata del KV-cache C++.
-4. **Interactive Tester & Direct Shell**: Tab 3 equipaggiata con quick prompt shell per inviare frasi al modello caricato senza comporre JSON manuale, preset one-click (S1 Recall, Stream SSE live, S2 Queue Stress con 5 chiamate concorrenti, Health check) e harness raw JSON collassabile.
-5. **Restyling TUI & De-cluttering**: Estetica rigorosa a console terminale (`Typeface.MONOSPACE`, bottoni a parentesi quadre `[ ... ]`, palette scura ad alto contrasto), rimozione di console e input ridondanti dai Tab 1 e 2, telemetria della coda in StatusIsland (`Inference Queue: X/4 Slots`) e centralizzazione totale dei log nel Tab 4 con comandi `[ 📋 COPY ALL ]` e `[ 🗑️ CLEAR LOGS ]`.
+Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 e stabilizzazione motore su branch `feature/request-queue`:
+1. **RequestQueue FIFO Serializzata**: Gestore single-worker della concorrenza (capacità 4 slot, timeout 120s) con esclusione mutua su `generate()` e `generateStream()`, e ritorno di HTTP 429 (`rate_limit_exceeded` / `Retry-After: 30`) sia su overflow che su timeout per OpenAI (`/v1/chat/completions`) e Ollama (`/api/chat`).
+2. **Suite di Test Unitari**: `RequestQueueTest` con 5 casi di test JUnit 4 passati con successo.
+3. **Stabilizzazione LiteRT-LM 0.16.1 & Coroutines 1.11.0**: Risolto il crash fatale `NoSuchMethodError: SendChannel.close$default` su `sendMessageAsync.onDone()` allineando esplicitamente `kotlinx-coroutines-core:1.11.0` e `kotlinx-coroutines-android:1.11.0` in `app/build.gradle.kts`. Mantenuto il supporto a `SamplerConfig(temperature, topP)` e Gemma 4.
+4. **Governance Cache Privata & Pulizia Deterministica**: Configurato `cacheDir` verso directory privata interna (`context.cacheDir/litertlm_cache`), con creazione automatica della cartella; implementato `purgeCacheFiles()` eseguito automaticamente all'avvio (`onCreate`), alla chiusura dell'applicazione (`onDestroy` di Activity e Daemon Service) e allo scaricamento del modello (`unloadActiveModel`), con bonifica automatica della directory modelli pubblica da residui `*_mldrift_*`, preservando integralmente i file `.litertlm`.
+5. **Diagnostica RAM Fisica & Azione Trim Memory**: Monitoraggio della RAM reale di sistema (`ActivityManager.MemoryInfo`) integrato in `StatusIsland`, nelle schermate di avvio (Crash Recovery / Permission Gate) e in un pannello dedicato `> MEMORY & CACHE MANAGEMENT` in Tab 1, con pulsante `[ 🧹 TRIM SYSTEM RAM & GC ]` e `[ 🗑️ PURGE CACHE ]`.
+6. **Interactive Tester & Direct Shell**: Tab 3 con Quick Shell Prompt (`> [ Frase... ]`), preset one-click (S1 Recall, Stream SSE live, S2 Queue Stress 5x, Health check) ed estetica terminale TUI coerente.
 
 ## Prossimo passo
 
-- Eseguire il merge della [PR #8](https://github.com/lpiatti/android-edge-llm-server/pull/8) su `main` (build e unit test GitHub Actions passati con successo).
-- Scaricare l'APK debug compilato (`edge-llm-server-debug-apk`) dall'azione GitHub Actions run 34025798796 e installarlo sul dispositivo.
-- Testare su dispositivo fisico:
-  - Test interattivo con la Quick Shell Prompt (`> [ Frase... ]` e `[ SEND ]`).
-  - Test preset `[ S2 QUEUE ]` per verificare la risposta 429 al 5° slot concorrente.
-  - Test preset `[ S1 RECALL ]` per verificare la memoria del contesto conversazionale.
-  - Test streaming SSE per verificare la visualizzazione progressiva dei token.
-  - Test preset `[ S2 QUEUE ]` per verificare la risposta 429 al 5° slot concorrente.
-  - Test preset `[ S1 RECALL ]` per verificare la memoria del contesto conversazionale.
+- Attendere l'esito della pipeline GitHub Actions CI sulla PR #8 (`testDebugUnitTest` e `assembleDebug`).
+- Scaricare l'APK debug compilato ed eseguire il collaudo su Google Pixel 9:
+  - Invio di "ciao" tramite la Quick Prompt Shell per verificare l'assenza del crash `NoSuchMethodError`.
+  - Verifica della pulizia della cartella modelli `/sdcard/Download/llm-server/models/` da residui di cache.
+  - Verifica del monitor RAM e del comando `[ 🧹 TRIM RAM & GC ]` nelle schermate di avvio e nel Tab 1.
+  - Test preset di coda `[ S2 QUEUE ]` (HTTP 429) e streaming SSE live.
 
 ## Decisioni e vincoli attivi
 

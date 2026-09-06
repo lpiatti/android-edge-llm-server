@@ -137,7 +137,8 @@ class LlmServerService : Service() {
             Thread {
                 try {
                     kotlinx.coroutines.runBlocking {
-                        ModelManager.loadModel(modelPath, isMock, isGpu)
+                        val cacheDir = ModelManager.getPrivateCacheDirectory(this@LlmServerService).absolutePath
+                        ModelManager.loadModel(modelPath, isMock, isGpu, cacheDir)
                     }
                     ServerConsole.log("LlmServerService: Saved model auto-restored successfully.")
                 } catch (e: Exception) {
@@ -689,6 +690,12 @@ class LlmServerService : Service() {
         
         releaseLocks()
         activeRequestQueue = null
+        try {
+            ModelManager.purgeCacheFiles(this)
+            ModelManager.trimMemoryAndCollectGarbage()
+        } catch (e: Exception) {
+            ServerConsole.log("Warning cleaning cache on service destroy: ${e.message}")
+        }
         ServerConsole.log("LlmServerService destroyed successfully.")
     }
 

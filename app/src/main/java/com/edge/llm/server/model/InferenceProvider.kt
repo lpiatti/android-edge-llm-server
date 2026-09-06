@@ -89,7 +89,8 @@ class MockInferenceProvider : InferenceProvider {
  */
 class LiteRtLmInferenceProvider(
     private val modelPath: String,
-    private val useGpu: Boolean = false
+    private val useGpu: Boolean = false,
+    private val cacheDir: String? = null
 ) : InferenceProvider {
     private var engine: Engine? = null
 
@@ -99,10 +100,18 @@ class LiteRtLmInferenceProvider(
             if (!file.exists()) {
                 throw Exception("Model file does not exist at absolute path: $modelPath")
             }
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB, GPU=$useGpu)...")
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Loading model from ${file.name} (size: ${file.length() / 1024 / 1024} MB, GPU=$useGpu, cacheDir=${cacheDir ?: "default"})...")
             
+            // Ensure cache directory exists if specified
+            if (!cacheDir.isNullOrEmpty()) {
+                val dir = File(cacheDir)
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+            }
+
             val backend = if (useGpu) com.google.ai.edge.litertlm.Backend.GPU() else com.google.ai.edge.litertlm.Backend.CPU()
-            val config = EngineConfig(modelPath, backend)
+            val config = EngineConfig(modelPath = modelPath, backend = backend, cacheDir = cacheDir)
             val newEngine = Engine(config)
             newEngine.initialize()
             engine = newEngine
