@@ -15,6 +15,9 @@ import androidx.core.app.NotificationCompat
 import com.edge.llm.server.model.ChatMessage
 import com.edge.llm.server.model.ModelManager
 import com.edge.llm.server.model.PromptBuilder
+import com.edge.llm.server.model.QueueFullException
+import com.edge.llm.server.model.QueueTimeoutException
+import com.edge.llm.server.model.RequestQueue
 import com.edge.llm.server.util.ServerConsole
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -56,6 +59,10 @@ class LlmServerService : Service() {
 
         @Volatile
         var activeBindHost = "0.0.0.0"
+            internal set
+
+        @Volatile
+        var activeRequestQueue: RequestQueue? = null
             internal set
     }
 
@@ -105,6 +112,10 @@ class LlmServerService : Service() {
         
         // Reset telemetry stats on startup
         com.edge.llm.server.util.ServerStats.reset()
+
+        // Initialize single-worker FIFO RequestQueue (depth 4, timeout 120s)
+        activeRequestQueue = RequestQueue(maxQueueDepth = 4, queueTimeoutMs = 120_000L)
+        ServerConsole.log("RequestQueue initialized (depth=4, timeout=120s)")
 
         // 1. Promote to Foreground Service
         startForegroundNotification()
@@ -311,7 +322,25 @@ class LlmServerService : Service() {
                         com.edge.llm.server.util.ServerStats.totalRequests++
                         com.edge.llm.server.util.ServerStats.activeConnections++
                         val requestTime = System.currentTimeMillis()
+                        
+                        val queue = activeRequestQueue ?: throw IllegalStateException("Request queue not initialized")
+                        com.edge.llm.server.util.ServerStats.queuedRequests = queue.queuedRequestsCount
+
                         try {
+                            if (!ModelManager.isModelLoaded) {
+                                call.respond(
+                                    HttpStatusCode.ServiceUnavailable,
+                                    OpenAiErrorResponse(
+                                        error = OpenAiError(
+                                            message = "No model is currently loaded in engine. Please initialize a model first.",
+                                            type = "server_error",
+                                            code = 503
+                                        )
+                                    )
+                                )
+                                return@post
+                            }
+
                             val req = call.receive<ChatCompletionRequest>()
                             ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}, stream=${req.stream}, temp=${req.temperature}, top_p=${req.top_p}, max_tokens=${req.max_tokens}) from $clientIp")
                             
@@ -322,71 +351,80 @@ class LlmServerService : Service() {
                             val activeProvider = ModelManager.activeProvider
                             
                             if (req.stream == true) {
-                                call.respondBytesWriter(contentType = ContentType.Text.EventStream) {
-                                    val chunkId = "chatcmpl-" + UUID.randomUUID().toString()
-                                    val createdTime = System.currentTimeMillis() / 1000
-                                    
-                                    try {
-                                        var tokenCount = 0
+                                queue.executeStream(
+                                    flowProvider = {
                                         activeProvider.generateStream(
                                             prompt = fullPrompt,
                                             temperature = req.temperature,
                                             topP = req.top_p,
                                             maxTokens = req.max_tokens
-                                        ).collect { token ->
-                                            tokenCount++
-                                            com.edge.llm.server.util.ServerStats.totalTokensGenerated++
-                                            val chunk = ChatCompletionChunk(
-                                                id = chunkId,
-                                                created = createdTime,
-                                                model = ModelManager.activeModelName,
-                                                choices = listOf(
-                                                    ChunkChoice(
-                                                        index = 0,
-                                                        delta = ChunkDelta(content = token),
-                                                        finish_reason = null
+                                        )
+                                    },
+                                    consumer = { flow ->
+                                        call.respondBytesWriter(contentType = ContentType.Text.EventStream) {
+                                            val chunkId = "chatcmpl-" + UUID.randomUUID().toString()
+                                            val createdTime = System.currentTimeMillis() / 1000
+                                            
+                                            try {
+                                                var tokenCount = 0
+                                                flow.collect { token ->
+                                                    tokenCount++
+                                                    com.edge.llm.server.util.ServerStats.totalTokensGenerated++
+                                                    val chunk = ChatCompletionChunk(
+                                                        id = chunkId,
+                                                        created = createdTime,
+                                                        model = ModelManager.activeModelName,
+                                                        choices = listOf(
+                                                            ChunkChoice(
+                                                                index = 0,
+                                                                delta = ChunkDelta(content = token),
+                                                                finish_reason = null
+                                                            )
+                                                        )
+                                                    )
+                                                    val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), chunk)
+                                                    writeStringUtf8("data: $jsonString\n\n")
+                                                    flush()
+                                                }
+                                                val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                                if (durationSec > 0) {
+                                                    com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
+                                                }
+                                                // End of stream token
+                                                val endChunk = ChatCompletionChunk(
+                                                    id = chunkId,
+                                                    created = createdTime,
+                                                    model = ModelManager.activeModelName,
+                                                    choices = listOf(
+                                                        ChunkChoice(
+                                                            index = 0,
+                                                            delta = ChunkDelta(content = ""),
+                                                            finish_reason = "stop"
+                                                        )
                                                     )
                                                 )
-                                            )
-                                            val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), chunk)
-                                            writeStringUtf8("data: $jsonString\n\n")
-                                            flush()
+                                                val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), endChunk)
+                                                writeStringUtf8("data: $jsonString\n\n")
+                                                writeStringUtf8("data: [DONE]\n\n")
+                                                flush()
+                                                ServerConsole.log("<-- 200 OK (OpenAI Stream completed, $tokenCount tokens)")
+                                            } catch (e: Exception) {
+                                                ServerConsole.log("ERROR in stream collection: ${e.message}")
+                                                writeStringUtf8("data: {\"error\": \"${e.message}\"}\n\n")
+                                                flush()
+                                            }
                                         }
-                                        val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
-                                        if (durationSec > 0) {
-                                            com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
-                                        }
-                                        // End of stream token
-                                        val endChunk = ChatCompletionChunk(
-                                            id = chunkId,
-                                            created = createdTime,
-                                            model = ModelManager.activeModelName,
-                                            choices = listOf(
-                                                ChunkChoice(
-                                                    index = 0,
-                                                    delta = ChunkDelta(content = ""),
-                                                    finish_reason = "stop"
-                                                )
-                                            )
-                                        )
-                                        val jsonString = kotlinx.serialization.json.Json.encodeToString(ChatCompletionChunk.serializer(), endChunk)
-                                        writeStringUtf8("data: $jsonString\n\n")
-                                        writeStringUtf8("data: [DONE]\n\n")
-                                        flush()
-                                        ServerConsole.log("<-- 200 OK (OpenAI Stream completed, $tokenCount tokens)")
-                                    } catch (e: Exception) {
-                                        ServerConsole.log("ERROR in stream collection: ${e.message}")
-                                        writeStringUtf8("data: {\"error\": \"${e.message}\"}\n\n")
-                                        flush()
                                     }
-                                }
-                            } else {
-                                val answer = activeProvider.generate(
-                                    prompt = fullPrompt,
-                                    temperature = req.temperature,
-                                    topP = req.top_p,
-                                    maxTokens = req.max_tokens
                                 )
+                            } else {
+                                val answer = queue.execute {
+                                    activeProvider.generate(
+                                        prompt = fullPrompt,
+                                        temperature = req.temperature,
+                                        topP = req.top_p,
+                                        maxTokens = req.max_tokens
+                                    )
+                                }
                                 val tokenCount = answer.length / 4
                                 com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
                                 val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
@@ -417,12 +455,50 @@ class LlmServerService : Service() {
                                 call.respond(response)
                                 ServerConsole.log("<-- 200 OK (OpenAI completions response sent)")
                             }
+                        } catch (e: QueueFullException) {
+                            ServerConsole.log("QUEUE OVERFLOW (429): ${e.message}")
+                            call.response.header("Retry-After", "30")
+                            call.respond(
+                                HttpStatusCode.TooManyRequests,
+                                OpenAiErrorResponse(
+                                    error = OpenAiError(
+                                        message = e.message ?: "Server is busy processing other requests. Queue capacity reached. Please retry later.",
+                                        type = "rate_limit_exceeded",
+                                        code = 429
+                                    )
+                                )
+                            )
+                        } catch (e: QueueTimeoutException) {
+                            ServerConsole.log("QUEUE TIMEOUT (429): ${e.message}")
+                            call.response.header("Retry-After", "30")
+                            call.respond(
+                                HttpStatusCode.TooManyRequests,
+                                OpenAiErrorResponse(
+                                    error = OpenAiError(
+                                        message = e.message ?: "Request timed out waiting in inference queue.",
+                                        type = "rate_limit_exceeded",
+                                        code = 429
+                                    )
+                                )
+                            )
                         } catch (e: Exception) {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing chat completions: $errorMsg")
-                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
+                            call.respond(
+                                HttpStatusCode.BadRequest,
+                                OpenAiErrorResponse(
+                                    error = OpenAiError(
+                                        message = errorMsg,
+                                        type = "invalid_request_error",
+                                        code = 400
+                                    )
+                                )
+                            )
                         } finally {
                             com.edge.llm.server.util.ServerStats.activeConnections--
+                            activeRequestQueue?.let {
+                                com.edge.llm.server.util.ServerStats.queuedRequests = it.queuedRequestsCount
+                            }
                         }
                     }
 
@@ -449,7 +525,19 @@ class LlmServerService : Service() {
                         com.edge.llm.server.util.ServerStats.totalRequests++
                         com.edge.llm.server.util.ServerStats.activeConnections++
                         val requestTime = System.currentTimeMillis()
+                        
+                        val queue = activeRequestQueue ?: throw IllegalStateException("Request queue not initialized")
+                        com.edge.llm.server.util.ServerStats.queuedRequests = queue.queuedRequestsCount
+
                         try {
+                            if (!ModelManager.isModelLoaded) {
+                                call.respond(
+                                    HttpStatusCode.ServiceUnavailable,
+                                    mapOf("error" to "No model is currently loaded in engine. Please initialize a model first.")
+                                )
+                                return@post
+                            }
+
                             val req = call.receive<OllamaChatRequest>()
                             ServerConsole.log("--> POST /api/chat (model=${req.model}, stream=${req.stream}) from $clientIp")
                             
@@ -465,57 +553,66 @@ class LlmServerService : Service() {
                             val reqMaxTokens = req.options?.num_predict
 
                             if (req.stream == true) {
-                                call.respondBytesWriter(contentType = ContentType.Application.Json) {
-                                    try {
-                                        var tokenCount = 0
+                                queue.executeStream(
+                                    flowProvider = {
                                         activeProvider.generateStream(
                                             prompt = fullPrompt,
                                             temperature = reqTemp,
                                             topP = reqTopP,
                                             maxTokens = reqMaxTokens
-                                        ).collect { token ->
-                                            tokenCount++
-                                            com.edge.llm.server.util.ServerStats.totalTokensGenerated++
-                                            val chunk = OllamaChatResponse(
-                                                model = ModelManager.activeModelName,
-                                                created_at = formatter.format(java.util.Date()),
-                                                message = OllamaMessage(role = "assistant", content = token),
-                                                done = false,
-                                                total_duration = 0L
-                                            )
-                                            val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), chunk)
-                                            writeStringUtf8("$jsonString\n")
-                                            flush()
-                                        }
-                                        val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
-                                        if (durationSec > 0) {
-                                            com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
-                                        }
-                                        // Final chunk
-                                        val finalChunk = OllamaChatResponse(
-                                            model = ModelManager.activeModelName,
-                                            created_at = formatter.format(java.util.Date()),
-                                            message = OllamaMessage(role = "assistant", content = ""),
-                                            done = true,
-                                            total_duration = 1000000L
                                         )
-                                        val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), finalChunk)
-                                        writeStringUtf8("$jsonString\n")
-                                        flush()
-                                        ServerConsole.log("<-- 200 OK (Ollama Stream completed, $tokenCount tokens)")
-                                    } catch (e: Exception) {
-                                        ServerConsole.log("ERROR in Ollama stream collection: ${e.message}")
-                                        writeStringUtf8("{\"error\": \"${e.message}\"}\n")
-                                        flush()
+                                    },
+                                    consumer = { flow ->
+                                        call.respondBytesWriter(contentType = ContentType.Application.Json) {
+                                            try {
+                                                var tokenCount = 0
+                                                flow.collect { token ->
+                                                    tokenCount++
+                                                    com.edge.llm.server.util.ServerStats.totalTokensGenerated++
+                                                    val chunk = OllamaChatResponse(
+                                                        model = ModelManager.activeModelName,
+                                                        created_at = formatter.format(java.util.Date()),
+                                                        message = OllamaMessage(role = "assistant", content = token),
+                                                        done = false,
+                                                        total_duration = 0L
+                                                    )
+                                                    val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), chunk)
+                                                    writeStringUtf8("$jsonString\n")
+                                                    flush()
+                                                }
+                                                val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
+                                                if (durationSec > 0) {
+                                                    com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
+                                                }
+                                                // Final chunk
+                                                val finalChunk = OllamaChatResponse(
+                                                    model = ModelManager.activeModelName,
+                                                    created_at = formatter.format(java.util.Date()),
+                                                    message = OllamaMessage(role = "assistant", content = ""),
+                                                    done = true,
+                                                    total_duration = 1000000L
+                                                )
+                                                val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), finalChunk)
+                                                writeStringUtf8("$jsonString\n")
+                                                flush()
+                                                ServerConsole.log("<-- 200 OK (Ollama Stream completed, $tokenCount tokens)")
+                                            } catch (e: Exception) {
+                                                ServerConsole.log("ERROR in Ollama stream collection: ${e.message}")
+                                                writeStringUtf8("{\"error\": \"${e.message}\"}\n")
+                                                flush()
+                                            }
+                                        }
                                     }
-                                }
-                            } else {
-                                val answer = activeProvider.generate(
-                                    prompt = fullPrompt,
-                                    temperature = reqTemp,
-                                    topP = reqTopP,
-                                    maxTokens = reqMaxTokens
                                 )
+                            } else {
+                                val answer = queue.execute {
+                                    activeProvider.generate(
+                                        prompt = fullPrompt,
+                                        temperature = reqTemp,
+                                        topP = reqTopP,
+                                        maxTokens = reqMaxTokens
+                                    )
+                                }
                                 val tokenCount = answer.length / 4
                                 com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
                                 val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
@@ -533,12 +630,29 @@ class LlmServerService : Service() {
                                 call.respond(response)
                                 ServerConsole.log("<-- 200 OK (Ollama response sent)")
                             }
+                        } catch (e: QueueFullException) {
+                            ServerConsole.log("Ollama QUEUE OVERFLOW (429): ${e.message}")
+                            call.response.header("Retry-After", "30")
+                            call.respond(
+                                HttpStatusCode.TooManyRequests,
+                                mapOf("error" to (e.message ?: "Server is busy. Queue capacity reached. Please retry later."))
+                            )
+                        } catch (e: QueueTimeoutException) {
+                            ServerConsole.log("Ollama QUEUE TIMEOUT (429): ${e.message}")
+                            call.response.header("Retry-After", "30")
+                            call.respond(
+                                HttpStatusCode.TooManyRequests,
+                                mapOf("error" to (e.message ?: "Request timed out waiting in inference queue."))
+                            )
                         } catch (e: Exception) {
                             val errorMsg = e.message ?: "Unknown parsing error"
                             ServerConsole.log("ERROR processing Ollama chat: $errorMsg")
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to errorMsg))
                         } finally {
                             com.edge.llm.server.util.ServerStats.activeConnections--
+                            activeRequestQueue?.let {
+                                com.edge.llm.server.util.ServerStats.queuedRequests = it.queuedRequestsCount
+                            }
                         }
                     }
                 }
@@ -574,6 +688,7 @@ class LlmServerService : Service() {
         }
         
         releaseLocks()
+        activeRequestQueue = null
         ServerConsole.log("LlmServerService destroyed successfully.")
     }
 
@@ -582,6 +697,18 @@ class LlmServerService : Service() {
     }
 
     // --- JSON Serialization Data Classes (OpenAI-Compatible schemas) ---
+
+    @Serializable
+    data class OpenAiError(
+        val message: String,
+        val type: String = "rate_limit_exceeded",
+        val code: Int = 429
+    )
+
+    @Serializable
+    data class OpenAiErrorResponse(
+        val error: OpenAiError
+    )
 
     @Serializable
     data class HealthResponse(

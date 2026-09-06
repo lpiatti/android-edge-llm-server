@@ -15,13 +15,21 @@ dispositivo fisico Android; inferenza LiteRT-LM reattiva via API compatibili Ope
 
 ## Stato attuale
 
-Progetto strutturato secondo il Metodo Agorà v3.3. Completata l'implementazione della Sessione S1 su branch `feature/api-full-context`: prompt assembly multi-turn completo con template Gemma (`PromptBuilder`), inoltro parametri di campionamento (`temperature`, `top_p`, `max_tokens`/`num_predict`) sia su `/v1/chat/completions` che su `/api/chat`, suite di test unitari JVM (`PromptBuilderTest`), rimozione delle pause forzate GC in memory alert, aggiornamento del workflow CI per eseguire `testDebugUnitTest` prima della build APK, e script di benchmark prefill (`scripts/`).
+Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 su branch `feature/request-queue`:
+1. **RequestQueue FIFO Serializzata**: Gestore single-worker della concorrenza (capacità 4 slot, timeout 120s) con esclusione mutua su `generate()` e `generateStream()`, e ritorno di HTTP 429 (`rate_limit_exceeded` / `Retry-After: 30`) sia su overflow che su timeout sia per OpenAI (`/v1/chat/completions`) che Ollama (`/api/chat`).
+2. **Suite di Test Unitari**: `RequestQueueTest` con 5 casi di test JUnit 4 (singola esecuzione, sequenza FIFO, overflow a 4 slot, timeout di attesa, lock mantenuto durante lo stream).
+3. **Upgrade LiteRT-LM 0.16.1**: Aggiornato `litertlm-android` da 0.11.0 a 0.16.1 in `app/build.gradle.kts`, abilitato il campionamento dinamico via `SamplerConfig(temperature, topP)` e sbloccata la gestione avanzata del KV-cache C++.
+4. **Interactive Tester & Direct Shell**: Tab 3 equipaggiata con quick prompt shell per inviare frasi al modello caricato senza comporre JSON manuale, preset one-click (S1 Recall, Stream SSE live, S2 Queue Stress con 5 chiamate concorrenti, Health check) e harness raw JSON collassabile.
+5. **Restyling TUI & De-cluttering**: Estetica rigorosa a console terminale (`Typeface.MONOSPACE`, bottoni a parentesi quadre `[ ... ]`, palette scura ad alto contrasto), rimozione di console e input ridondanti dai Tab 1 e 2, telemetria della coda in StatusIsland (`Inference Queue: X/4 Slots`) e centralizzazione totale dei log nel Tab 4 con comandi `[ 📋 COPY ALL ]` e `[ 🗑️ CLEAR LOGS ]`.
 
 ## Prossimo passo
 
-- Eseguire la verifica multi-turn su dispositivo fisico con `scripts/test_multiturn.ps1` (o `.sh`) installando l'APK compilato dalla CI della PR #7.
-- Eseguire il benchmark di prefill con `scripts/benchmark_prefill.ps1` e registrare le metriche TTFT.
-- Procedere con la Sessione S2: `RequestQueue` serializzata single-worker FIFO con HTTP 429 su overflow.
+- Eseguire push del branch `feature/request-queue` e verificare il superamento della build CI (`testDebugUnitTest assembleDebug`).
+- Eseguire merge su `main` e scaricare l'APK compilato dalla CI.
+- Testare su dispositivo fisico:
+  - Test interattivo con la Quick Shell Prompt.
+  - Test preset `[ S2 QUEUE ]` per verificare la risposta 429 al 5° slot concorrente.
+  - Test preset `[ S1 RECALL ]` per verificare la memoria del contesto conversazionale.
 
 ## Decisioni e vincoli attivi
 
@@ -53,4 +61,4 @@ Nessuna.
 
 ## Ultimo aggiornamento
 
-2026-09-05
+2026-09-06

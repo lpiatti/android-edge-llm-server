@@ -2,8 +2,10 @@ package com.edge.llm.server.model
 
 import com.edge.llm.server.util.LogCategory
 import com.edge.llm.server.util.ServerConsole
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -120,13 +122,17 @@ class LiteRtLmInferenceProvider(
     ): String = withContext(Dispatchers.IO) {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val resultBuilder = StringBuilder()
-        
-        if (temperature != null || topP != null || maxTokens != null) {
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        val conversationConfig = if (temperature != null || topP != null) {
+            val tempFloat = (temperature ?: 0.7).toFloat()
+            val topPFloat = (topP ?: 0.95).toFloat()
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (temp=$tempFloat, top_p=$topPFloat)")
+            ConversationConfig(samplerConfig = SamplerConfig(topP = topPFloat, temperature = tempFloat))
+        } else {
+            ConversationConfig()
         }
         
         ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running synchronous inference (prompt chars: ${prompt.length})...")
-        activeEngine.createConversation().use { conversation ->
+        activeEngine.createConversation(conversationConfig).use { conversation ->
             // Collect flow tokens synchronously into a string
             conversation.sendMessageAsync(prompt).collect { message ->
                 resultBuilder.append(message.toString())
@@ -144,11 +150,16 @@ class LiteRtLmInferenceProvider(
         maxTokens: Int?
     ): Flow<String> = flow {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
-        if (temperature != null || topP != null || maxTokens != null) {
-            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        val conversationConfig = if (temperature != null || topP != null) {
+            val tempFloat = (temperature ?: 0.7).toFloat()
+            val topPFloat = (topP ?: 0.95).toFloat()
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Applying dynamic SamplerConfig (temp=$tempFloat, top_p=$topPFloat)")
+            ConversationConfig(samplerConfig = SamplerConfig(topP = topPFloat, temperature = tempFloat))
+        } else {
+            ConversationConfig()
         }
         ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running streaming inference (prompt chars: ${prompt.length})...")
-        activeEngine.createConversation().use { conversation ->
+        activeEngine.createConversation(conversationConfig).use { conversation ->
             conversation.sendMessageAsync(prompt).collect { message ->
                 emit(message.toString())
             }

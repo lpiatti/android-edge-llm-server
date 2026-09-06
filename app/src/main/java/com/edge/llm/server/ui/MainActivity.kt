@@ -1,5 +1,7 @@
 package com.edge.llm.server.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -18,6 +20,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.edge.llm.server.model.ModelManager
 import com.edge.llm.server.service.LlmServerService
@@ -71,9 +74,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modelFileLabel: TextView
     private lateinit var initModelBtn: Button
     private lateinit var stopModelBtn: Button
-    private lateinit var quickPromptEdit: EditText
-    private lateinit var quickRunBtn: Button
-    private lateinit var quickInferenceConsole: CollapsibleLogConsole
     
     private var selectedModelPath: String? = null
     private var selectedModelName: String = "No file selected"
@@ -82,20 +82,35 @@ class MainActivity : AppCompatActivity() {
 
     // Tab 2 (Server Daemon) Views
     private lateinit var toggleServerBtn: Button
+    private lateinit var copyUrlBtn: Button
     private lateinit var batteryBtn: Button
     private lateinit var wifiPill: Button
     private lateinit var mobilePill: Button
     private lateinit var allPill: Button
-    private lateinit var serverConsole: CollapsibleLogConsole
     private var selectedBindingInterface = "All"
 
     private lateinit var serverAddressLabel: TextView
     private lateinit var statsRequestsText: TextView
+    private lateinit var statsQueueText: TextView
     private lateinit var statsSpeedText: TextView
     private lateinit var statsTokensText: TextView
     private lateinit var statsLoadTimeText: TextView
 
     // Tab 3 (API Test Suite) Views
+    private lateinit var quickShellInput: EditText
+    private lateinit var quickShellSendBtn: Button
+    private lateinit var quickShellStreamBtn: Button
+    private var isQuickStreamEnabled = true
+
+    private lateinit var presetS1Btn: Button
+    private lateinit var presetStreamBtn: Button
+    private lateinit var presetS2QueueBtn: Button
+    private lateinit var presetHealthBtn: Button
+
+    private lateinit var rawJsonToggleBtn: Button
+    private lateinit var rawJsonContainer: LinearLayout
+    private var isRawJsonVisible = false
+
     private lateinit var openAiPill: Button
     private lateinit var ollamaPill: Button
     private lateinit var epPill1: Button
@@ -103,7 +118,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var epPill3: Button
     private lateinit var chipRow: LinearLayout
     private lateinit var payloadEditor: EditText
-    private lateinit var runTestBtn: Button
+    private lateinit var runRawTestBtn: Button
+
     private lateinit var latencyMetric: TextView
     private lateinit var statusMetric: TextView
     private lateinit var sizeMetric: TextView
@@ -116,6 +132,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filterServerBtn: Button
     private lateinit var filterEngineBtn: Button
     private lateinit var filterUiBtn: Button
+    private lateinit var copyLogsBtn: Button
+    private lateinit var clearLogsBtn: Button
     private lateinit var fullSystemConsole: CollapsibleLogConsole
     private var activeLogFilter = "ALL" // "ALL", "SERVER", "ENGINE", "UI"
 
@@ -170,11 +188,13 @@ class MainActivity : AppCompatActivity() {
     private val testTimerHandler = Handler(Looper.getMainLooper())
     private var testStartTime: Long = 0
     private var isTestingApi = false
+    private var activeTestButton: Button? = null
+    private var defaultTestButtonText: String = ""
     private val testTimerRunnable = object : Runnable {
         override fun run() {
             if (isTestingApi) {
                 val elapsedSec = (System.currentTimeMillis() - testStartTime) / 1000.0
-                runTestBtn.text = "Testing... %.1fs".format(elapsedSec)
+                activeTestButton?.text = "Testing... %.1fs".format(elapsedSec)
                 testTimerHandler.postDelayed(this, 100)
             }
         }
@@ -537,29 +557,33 @@ class MainActivity : AppCompatActivity() {
         }
 
         modelTabBtn = Button(this).apply {
-            text = "Engine"
-            textSize = 10f
+            text = "[ ENGINE ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { switchTab(0) }
         }
         tabBar.addView(modelTabBtn, btnParams)
 
         serverTabBtn = Button(this).apply {
-            text = "Daemon"
-            textSize = 10f
+            text = "[ DAEMON ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { switchTab(1) }
         }
         tabBar.addView(serverTabBtn, btnParams)
 
         testTabBtn = Button(this).apply {
-            text = "Tester"
-            textSize = 10f
+            text = "[ TESTER ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { switchTab(2) }
         }
         tabBar.addView(testTabBtn, btnParams)
 
         logsTabBtn = Button(this).apply {
-            text = "Logs"
-            textSize = 10f
+            text = "[ LOGS ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { switchTab(3) }
         }
         val logsBtnParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
@@ -571,13 +595,8 @@ class MainActivity : AppCompatActivity() {
         ServerConsole.logListener = { entry ->
             runOnUiThread {
                 if (entry.message == "CLEAR_LOGS") {
-                    serverConsole.clear()
                     fullSystemConsole.clear()
                 } else {
-                    // Tab 2 console displays only the last 3 logs
-                    if (entry.category == LogCategory.SERVER) {
-                        serverConsole.setText(ServerConsole.getLogs(LogCategory.SERVER).takeLast(3).joinToString("\n") { it.toFormattedString() })
-                    }
                     refreshSystemLogsView()
                 }
             }
@@ -678,6 +697,19 @@ class MainActivity : AppCompatActivity() {
         if (!::statsRequestsText.isInitialized) return
         val stats = com.edge.llm.server.util.ServerStats
         statsRequestsText.text = "${stats.totalRequests} (Active: ${stats.activeConnections})"
+
+        if (::statsQueueText.isInitialized) {
+            val qCount = stats.queuedRequests
+            statsQueueText.text = "$qCount / 4 Slots"
+            statsQueueText.setTextColor(
+                when {
+                    qCount >= 4 -> Color.parseColor("#FF4444")
+                    qCount > 0 -> Color.parseColor("#FF8800")
+                    else -> Color.parseColor("#00FF66")
+                }
+            )
+        }
+
         statsSpeedText.text = if (stats.lastGenerationSpeedTps > 0) "%.1f tok/s".format(stats.lastGenerationSpeedTps) else "0.0 tok/s"
         statsTokensText.text = "${stats.totalTokensGenerated} tokens"
         statsLoadTimeText.text = if (stats.modelLoadTimeMs > 0) "%.2f s".format(stats.modelLoadTimeMs / 1000.0) else "N/A"
@@ -697,10 +729,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         val sectionTitle = TextView(this).apply {
-            text = "Model Engine Setup"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            text = "[ SYSTEM // MODEL ENGINE SETUP ]"
+            textSize = 14f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, 16)
         }
         modelContainer.addView(sectionTitle)
@@ -712,10 +744,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         mockPillModel = Button(this).apply {
-            text = "Mock Engine"
+            text = "[ MOCK SIMULATOR ]"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#3366BB"))
-            textSize = 11f
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
                 setMargins(0, 0, 8, 0)
             }
@@ -725,10 +758,11 @@ class MainActivity : AppCompatActivity() {
         engineModeRow.addView(mockPillModel)
 
         realPillModel = Button(this).apply {
-            text = "Real .litertlm"
+            text = "[ REAL .LITERTLM ]"
             setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.parseColor("#222222"))
-            textSize = 11f
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { setModelMockMode(false) }
@@ -740,14 +774,15 @@ class MainActivity : AppCompatActivity() {
         backendSelectorRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, 16)
-            visibility = View.GONE // Show only if real model selected
+            visibility = View.GONE
         }
 
         cpuModelPill = Button(this).apply {
-            text = "Backend: CPU"
+            text = "[ CPU: STABLE ]"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#3366BB"))
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
                 setMargins(0, 0, 8, 0)
             }
@@ -757,10 +792,11 @@ class MainActivity : AppCompatActivity() {
         backendSelectorRow.addView(cpuModelPill)
 
         gpuModelPill = Button(this).apply {
-            text = "Backend: GPU"
+            text = "[ GPU: EXPERIMENTAL ]"
             setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.parseColor("#222222"))
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { setHardwareBackend(true) }
@@ -771,8 +807,13 @@ class MainActivity : AppCompatActivity() {
         // Native SAF file picker card
         pickerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundColor(Color.parseColor("#1C1C1C"))
+            setPadding(16, 16, 16, 16)
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#161616"))
+                cornerRadius = 8f
+                setStroke(1, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
             visibility = View.GONE
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 setMargins(0, 0, 0, 16)
@@ -781,18 +822,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         modelFileLabel = TextView(this).apply {
-            text = "Selected: No file selected"
-            textSize = 11f
+            text = "FILE: No file selected"
+            textSize = 10f
             setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 12)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 10)
         }
         pickerCard.addView(modelFileLabel)
 
         pickerBtn = Button(this).apply {
-            text = "📂 Select Model File (.litertlm)"
+            text = "[ 📂 SELECT MODEL FILE (.litertlm) ]"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#444444"))
-            textSize = 11f
+            setBackgroundColor(Color.parseColor("#333333"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { openModelFilePicker() }
         }
         pickerCard.addView(pickerBtn)
@@ -805,10 +848,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         initModelBtn = Button(this).apply {
-            text = "Initialize Engine"
+            text = "[ ▶ INITIALIZE ENGINE ]"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#22AA55"))
-            textSize = 12f
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
                 setMargins(0, 0, 8, 0)
             }
@@ -818,10 +862,11 @@ class MainActivity : AppCompatActivity() {
         actionsRow.addView(initModelBtn)
 
         stopModelBtn = Button(this).apply {
-            text = "Unload Engine"
+            text = "[ ⏹ UNLOAD ENGINE ]"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#CC0000"))
-            textSize = 12f
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { unloadEngine() }
@@ -829,51 +874,14 @@ class MainActivity : AppCompatActivity() {
         actionsRow.addView(stopModelBtn)
         modelContainer.addView(actionsRow)
 
-        // Quick Direct Prompt Test Row
-        val testLabel = TextView(this).apply {
-            text = "Quick Inference Test:"
-            textSize = 12f
-            setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 8, 0, 8)
+        val engineNote = TextView(this).apply {
+            text = "> Terminal Note: Model execution runs in the background. Full API testing, direct chat prompts, and queue benchmarks are in the [TESTER] tab."
+            textSize = 10f
+            setTextColor(Color.parseColor("#666666"))
+            typeface = Typeface.MONOSPACE
+            setPadding(4, 4, 4, 4)
         }
-        modelContainer.addView(testLabel)
-
-        val quickInputRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 12)
-            }
-            layoutParams = params
-        }
-
-        quickPromptEdit = EditText(this).apply {
-            hint = "Ask the model something..."
-            textSize = 11f
-            setTextColor(Color.parseColor("#555555"))
-            setBackgroundColor(Color.parseColor("#1C1C1C"))
-            setPadding(16, 12, 16, 12)
-            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
-            }
-            layoutParams = params
-            isEnabled = false
-        }
-        quickInputRow.addView(quickPromptEdit)
-
-        quickRunBtn = Button(this).apply {
-            text = "Send"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#333333"))
-            textSize = 11f
-            isEnabled = false
-            setOnClickListener { runQuickInferenceTest() }
-        }
-        quickInputRow.addView(quickRunBtn)
-        modelContainer.addView(quickInputRow)
-
-        quickInferenceConsole = CollapsibleLogConsole(this, "Inference Output Logs:")
-        modelContainer.addView(quickInferenceConsole)
+        modelContainer.addView(engineNote)
     }
 
     private fun setModelMockMode(isMock: Boolean) {
@@ -993,49 +1001,6 @@ class MainActivity : AppCompatActivity() {
         serverTabBtn.setVisualEnabled(!loading)
         testTabBtn.setVisualEnabled(!loading)
         logsTabBtn.setVisualEnabled(!loading)
-
-        if (loaded) {
-            quickPromptEdit.isEnabled = true
-            quickPromptEdit.setBackgroundColor(Color.parseColor("#0A0A0A"))
-            quickPromptEdit.setTextColor(Color.parseColor("#00FF66"))
-            quickRunBtn.setVisualEnabled(true)
-            quickRunBtn.setBackgroundColor(Color.parseColor("#22AA55"))
-        } else {
-            quickPromptEdit.isEnabled = false
-            quickPromptEdit.setBackgroundColor(Color.parseColor("#1C1C1C"))
-            quickPromptEdit.setTextColor(Color.parseColor("#555555"))
-            quickRunBtn.setVisualEnabled(false)
-            quickRunBtn.setBackgroundColor(Color.parseColor("#333333"))
-        }
-    }
-
-    private fun runQuickInferenceTest() {
-        val prompt = quickPromptEdit.text.toString()
-        if (prompt.isEmpty()) return
-
-        quickInferenceConsole.setText(">>> Prompt: \"$prompt\"\n<<< Awaiting generation stream...\n")
-        quickRunBtn.setVisualEnabled(false)
-
-        val provider = ModelManager.activeProvider
-        Thread {
-            try {
-                kotlinx.coroutines.runBlocking {
-                    provider.generateStream(prompt).collect { token ->
-                        runOnUiThread {
-                            quickInferenceConsole.append(token)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    quickInferenceConsole.append("\n\nINFERENCE ERROR: ${e.message}")
-                }
-            } finally {
-                runOnUiThread {
-                    quickRunBtn.setVisualEnabled(true)
-                }
-            }
-        }.start()
     }
 
     // --- TAB 2: SERVER DAEMON LAYOUT (Wrapped inside ScrollView) ---
@@ -1051,55 +1016,82 @@ class MainActivity : AppCompatActivity() {
         }
 
         val sectionTitle = TextView(this).apply {
-            text = "Ktor Server Daemon Control"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            text = "[ NETWORK // KTOR SERVER DAEMON ]"
+            textSize = 14f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, 16)
         }
         serverContainer.addView(sectionTitle)
 
-        // Server Address Highlight Panel
+        // Hero Address Panel
         serverAddressLabel = TextView(this).apply {
-            textSize = 13f
+            textSize = 12f
             setTextColor(Color.parseColor("#FF8800"))
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
             setPadding(16, 16, 16, 16)
-            text = "🔴 SERVER OFFLINE"
+            text = "● SERVER OFFLINE\nWILL BIND TO: http://127.0.0.1:8080"
             val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1C1C1C"))
-                cornerRadius = 12f
-                setStroke(2, Color.parseColor("#2A2A2A"))
+                setColor(Color.parseColor("#161616"))
+                cornerRadius = 8f
+                setStroke(1, Color.parseColor("#2A2A2A"))
             }
             background = bg
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 16)
+                setMargins(0, 0, 0, 12)
             }
             layoutParams = params
         }
         serverContainer.addView(serverAddressLabel)
 
-        // Start / Stop Button
+        // Server Control Row (Start/Stop + Copy URL)
+        val serverControlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 16)
+        }
+
         toggleServerBtn = Button(this).apply {
-            text = "Start HTTP Daemon"
+            text = "[ ▶ START HTTP SERVER ]"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#3366BB"))
-            setPadding(24, 20, 24, 20)
-            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 16)
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f).apply {
+                setMargins(0, 0, 8, 0)
             }
             layoutParams = params
             setOnClickListener { toggleServerDaemon() }
         }
-        serverContainer.addView(toggleServerBtn)
+        serverControlRow.addView(toggleServerBtn)
+
+        copyUrlBtn = Button(this).apply {
+            text = "[ 📋 COPY URL ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener {
+                val host = if (LlmServerService.activeBindHost == "0.0.0.0") getLocalIpAddress() else LlmServerService.activeBindHost
+                val url = "http://$host:8080"
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Server URL", url)
+                clipboard.setPrimaryClip(clip)
+                ServerConsole.log(LogCategory.UI, "Copied server URL to clipboard: $url")
+            }
+        }
+        serverControlRow.addView(copyUrlBtn)
+        serverContainer.addView(serverControlRow)
 
         // Network Interface Selector
         val bindLabel = TextView(this).apply {
-            text = "Select Network Interface Bind:"
-            textSize = 12f
+            text = "BIND INTERFACE:"
+            textSize = 10f
             setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 8)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 6)
         }
         serverContainer.addView(bindLabel)
 
@@ -1108,13 +1100,28 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 16)
         }
 
+        allPill = Button(this).apply {
+            text = "[ ALL (0.0.0.0) ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#3366BB"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 6, 0)
+            }
+            layoutParams = params
+            setOnClickListener { setInterfaceBinding("All") }
+        }
+        bindRow.addView(allPill)
+
         wifiPill = Button(this).apply {
-            text = "Wi-Fi Only"
+            text = "[ WI-FI ]"
             setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.parseColor("#222222"))
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
             layoutParams = params
             setOnClickListener { setInterfaceBinding("Wi-Fi") }
@@ -1122,51 +1129,26 @@ class MainActivity : AppCompatActivity() {
         bindRow.addView(wifiPill)
 
         mobilePill = Button(this).apply {
-            text = "Mobile Only"
+            text = "[ CELLULAR ]"
             setTextColor(Color.parseColor("#888888"))
             setBackgroundColor(Color.parseColor("#222222"))
-            textSize = 10f
-            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
-            }
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { setInterfaceBinding("Mobile") }
         }
         bindRow.addView(mobilePill)
-
-        allPill = Button(this).apply {
-            text = "All Interfaces"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#3366BB"))
-            textSize = 10f
-            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
-            layoutParams = params
-            setOnClickListener { setInterfaceBinding("All") }
-        }
-        bindRow.addView(allPill)
         serverContainer.addView(bindRow)
 
-        batteryBtn = Button(this).apply {
-            text = "Bypass CPU Standby Throttling"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#444444"))
-            textSize = 11f
-            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 16)
-            }
-            layoutParams = params
-            setOnClickListener { launchBatterySettings() }
-        }
-        serverContainer.addView(batteryBtn)
-
-        // 5. Statistics Telemetry Card
+        // Live Daemon Telemetry Card
         val statsCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 20)
+            setPadding(16, 16, 16, 16)
             val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1C1C1C"))
-                cornerRadius = 12f
-                setStroke(2, Color.parseColor("#2A2A2A"))
+                setColor(Color.parseColor("#161616"))
+                cornerRadius = 8f
+                setStroke(1, Color.parseColor("#2A2A2A"))
             }
             background = bg
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -1176,10 +1158,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         val statsTitle = TextView(this).apply {
-            text = "📊 Live Daemon Telemetry"
-            textSize = 12f
+            text = "[ LIVE DAEMON TELEMETRY ]"
+            textSize = 11f
             setTextColor(Color.WHITE)
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, 8)
         }
         statsCard.addView(statsTitle)
@@ -1187,18 +1169,19 @@ class MainActivity : AppCompatActivity() {
         val createStatsRow = { labelStr: String, valRef: (TextView) -> Unit ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 4, 0, 4)
+                setPadding(0, 3, 0, 3)
             }
             val lbl = TextView(this).apply {
                 text = labelStr
-                textSize = 11f
+                textSize = 10f
                 setTextColor(Color.parseColor("#888888"))
+                typeface = Typeface.MONOSPACE
                 val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
                 layoutParams = params
             }
             val v = TextView(this).apply {
                 text = "0"
-                textSize = 11f
+                textSize = 10f
                 setTextColor(Color.parseColor("#00FF66"))
                 typeface = Typeface.MONOSPACE
             }
@@ -1209,14 +1192,26 @@ class MainActivity : AppCompatActivity() {
         }
 
         statsCard.addView(createStatsRow("Processed Requests (Active):") { statsRequestsText = it })
+        statsCard.addView(createStatsRow("Request Queue (S2):") { statsQueueText = it })
         statsCard.addView(createStatsRow("Tokens Generation Speed:") { statsSpeedText = it })
         statsCard.addView(createStatsRow("Total Tokens Generated:") { statsTokensText = it })
         statsCard.addView(createStatsRow("Model Engine Load Duration:") { statsLoadTimeText = it })
 
         serverContainer.addView(statsCard)
 
-        serverConsole = CollapsibleLogConsole(this, "Daemon Console Logs (Last 3 entries):")
-        serverContainer.addView(serverConsole)
+        batteryBtn = Button(this).apply {
+            text = "[ ⚡ BYPASS CPU STANDBY (BATTERY OPTIMIZATION) ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#2A2A2A"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            layoutParams = params
+            setOnClickListener { launchBatterySettings() }
+        }
+        serverContainer.addView(batteryBtn)
     }
 
     private fun toggleServerDaemon() {
@@ -1251,7 +1246,7 @@ class MainActivity : AppCompatActivity() {
         val modelLoading = ModelManager.isLoading
 
         if (active) {
-            toggleServerBtn.text = "Stop HTTP Server"
+            toggleServerBtn.text = "[ ⏹ STOP HTTP SERVER ]"
             toggleServerBtn.setBackgroundColor(Color.parseColor("#CC0000"))
             
             wifiPill.setVisualEnabled(false)
@@ -1261,9 +1256,10 @@ class MainActivity : AppCompatActivity() {
             val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") getLocalIpAddress() else LlmServerService.activeBindHost
             serverAddressLabel.text = "🟢 SERVER ACTIVE\nURL: http://$activeHost:8080"
             serverAddressLabel.setTextColor(Color.parseColor("#00FF66"))
+            copyUrlBtn.setVisualEnabled(true)
         } else {
-            toggleServerBtn.text = "Start HTTP Server"
-            toggleServerBtn.setBackgroundColor(Color.parseColor("#3366BB"))
+            toggleServerBtn.text = "[ ▶ START HTTP SERVER ]"
+            toggleServerBtn.setBackgroundColor(Color.parseColor("#00AA55"))
             
             wifiPill.setVisualEnabled(true)
             mobilePill.setVisualEnabled(true)
@@ -1276,15 +1272,17 @@ class MainActivity : AppCompatActivity() {
             }
             serverAddressLabel.text = "🔴 SERVER OFFLINE\nWill bind to: http://$ip:8080"
             serverAddressLabel.setTextColor(Color.parseColor("#FF8800"))
+            copyUrlBtn.setVisualEnabled(false)
         }
 
         toggleServerBtn.setVisualEnabled(modelLoaded && !modelLoading)
         if (!modelLoaded) {
-            toggleServerBtn.text = "Start Server (Load Engine First)"
+            toggleServerBtn.text = "[ ▶ START SERVER (LOAD ENGINE FIRST) ]"
+            toggleServerBtn.setBackgroundColor(Color.parseColor("#2A2A2A"))
         }
     }
 
-    // --- TAB 3: API TEST SUITE LAYOUT (Wrapped inside ScrollView) ---
+    // --- TAB 3: API TEST SUITE & INTERACTIVE TERMINAL HARNESS ---
 
     private fun createTestTab() {
         val testContainer = LinearLayout(this).apply {
@@ -1297,27 +1295,212 @@ class MainActivity : AppCompatActivity() {
         }
 
         val sectionTitle = TextView(this).apply {
-            text = "API Test Harness"
-            textSize = 16f
+            text = "API Test Harness & Model Shell"
+            textSize = 15f
             setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, 16)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 14)
         }
         testContainer.addView(sectionTitle)
+
+        // --- SECTION 1: QUICK PROMPT SHELL ---
+        val shellCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#161616"))
+                cornerRadius = 6f
+                setStroke(1, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            setPadding(16, 16, 16, 16)
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 14)
+            }
+            layoutParams = params
+        }
+
+        val shellHeader = TextView(this).apply {
+            text = "> INTERACTIVE SHELL PROMPT"
+            textSize = 12f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 8)
+        }
+        shellCard.addView(shellHeader)
+
+        quickShellInput = EditText(this).apply {
+            hint = "Type prompt here (auto-wrapped to /v1/chat)..."
+            setHintTextColor(Color.parseColor("#555555"))
+            textSize = 11f
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
+            typeface = Typeface.MONOSPACE
+            setPadding(14, 14, 14, 14)
+            minLines = 2
+            maxLines = 4
+            gravity = Gravity.TOP
+        }
+        shellCard.addView(quickShellInput)
+
+        val shellControlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 10, 0, 0)
+        }
+
+        quickShellStreamBtn = Button(this).apply {
+            text = "[ STREAM: ON ]"
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener {
+                isQuickStreamEnabled = !isQuickStreamEnabled
+                text = if (isQuickStreamEnabled) "[ STREAM: ON ]" else "[ STREAM: OFF ]"
+                setTextColor(Color.parseColor(if (isQuickStreamEnabled) "#00FF66" else "#888888"))
+            }
+        }
+        shellControlRow.addView(quickShellStreamBtn)
+
+        quickShellSendBtn = Button(this).apply {
+            text = "[ > SEND ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#00AA55"))
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener { executeQuickPrompt() }
+        }
+        shellControlRow.addView(quickShellSendBtn)
+        shellCard.addView(shellControlRow)
+
+        testContainer.addView(shellCard)
+
+        // --- SECTION 2: ONE-CLICK TEST PRESETS ---
+        val presetLabel = TextView(this).apply {
+            text = "> TEST PRESETS"
+            textSize = 11f
+            setTextColor(Color.parseColor("#888888"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 6)
+        }
+        testContainer.addView(presetLabel)
+
+        val presetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 14)
+            }
+            layoutParams = params
+        }
+
+        val pillWeightParams = {
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 6, 0)
+            }
+        }
+
+        presetS1Btn = Button(this).apply {
+            text = "[ S1 RECALL ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            layoutParams = pillWeightParams()
+            setOnClickListener { executePresetS1Recall() }
+        }
+        presetRow.addView(presetS1Btn)
+
+        presetStreamBtn = Button(this).apply {
+            text = "[ STREAM ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            layoutParams = pillWeightParams()
+            setOnClickListener { executePresetStream() }
+        }
+        presetRow.addView(presetStreamBtn)
+
+        presetS2QueueBtn = Button(this).apply {
+            text = "[ S2 QUEUE ]"
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            layoutParams = pillWeightParams()
+            setOnClickListener { executePresetQueueStress() }
+        }
+        presetRow.addView(presetS2QueueBtn)
+
+        presetHealthBtn = Button(this).apply {
+            text = "[ HEALTH ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val lastParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = lastParams
+            setOnClickListener { executePresetHealth() }
+        }
+        presetRow.addView(presetHealthBtn)
+
+        testContainer.addView(presetRow)
+
+        // --- SECTION 3: COLLAPSIBLE RAW JSON / PROTOCOL SELECTOR ---
+        rawJsonToggleBtn = Button(this).apply {
+            text = "[ ▸ RAW JSON & ENDPOINT HARNESS ]"
+            setTextColor(Color.parseColor("#888888"))
+            setBackgroundColor(Color.parseColor("#181818"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 10)
+            }
+            layoutParams = params
+            setOnClickListener {
+                isRawJsonVisible = !isRawJsonVisible
+                rawJsonContainer.visibility = if (isRawJsonVisible) View.VISIBLE else View.GONE
+                text = if (isRawJsonVisible) "[ ▾ RAW JSON & ENDPOINT HARNESS ]" else "[ ▸ RAW JSON & ENDPOINT HARNESS ]"
+            }
+        }
+        testContainer.addView(rawJsonToggleBtn)
+
+        rawJsonContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#141414"))
+                cornerRadius = 6f
+                setStroke(1, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            setPadding(14, 14, 14, 14)
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 14)
+            }
+            layoutParams = params
+        }
 
         // Protocol Selection
         val protocolRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 16)
+            setPadding(0, 0, 0, 10)
         }
 
         openAiPill = Button(this).apply {
-            text = "OpenAI API"
+            text = "[ OpenAI API ]"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#3366BB"))
-            textSize = 11f
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
             layoutParams = params
             setOnClickListener { setProtocolMode("OpenAI") }
@@ -1325,38 +1508,32 @@ class MainActivity : AppCompatActivity() {
         protocolRow.addView(openAiPill)
 
         ollamaPill = Button(this).apply {
-            text = "Ollama API"
+            text = "[ Ollama API ]"
             setTextColor(Color.parseColor("#888888"))
-            setBackgroundColor(Color.parseColor("#222222"))
-            textSize = 11f
+            setBackgroundColor(Color.parseColor("#161616"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { setProtocolMode("Ollama") }
         }
         protocolRow.addView(ollamaPill)
-        testContainer.addView(protocolRow)
+        rawJsonContainer.addView(protocolRow)
 
         // Route Selectors
-        val epLabel = TextView(this).apply {
-            text = "Select Route to Test:"
-            textSize = 12f
-            setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 8)
-        }
-        testContainer.addView(epLabel)
-
         val epRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 16)
+            setPadding(0, 0, 0, 10)
         }
 
         epPill1 = Button(this).apply {
             text = "GET /health"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#3366BB"))
+            setBackgroundColor(Color.parseColor("#222222"))
             textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
             layoutParams = params
             setOnClickListener { setEndpointSelection(0) }
@@ -1366,10 +1543,11 @@ class MainActivity : AppCompatActivity() {
         epPill2 = Button(this).apply {
             text = "GET /v1/models"
             setTextColor(Color.parseColor("#888888"))
-            setBackgroundColor(Color.parseColor("#222222"))
+            setBackgroundColor(Color.parseColor("#161616"))
             textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
             layoutParams = params
             setOnClickListener { setEndpointSelection(1) }
@@ -1379,82 +1557,63 @@ class MainActivity : AppCompatActivity() {
         epPill3 = Button(this).apply {
             text = "POST /v1/chat"
             setTextColor(Color.parseColor("#888888"))
-            setBackgroundColor(Color.parseColor("#222222"))
+            setBackgroundColor(Color.parseColor("#161616"))
             textSize = 9f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
             layoutParams = params
             setOnClickListener { setEndpointSelection(2) }
         }
         epRow.addView(epPill3)
-        testContainer.addView(epRow)
+        rawJsonContainer.addView(epRow)
 
-        // JSON Chips for optional inference parameters
-        val chipLabel = TextView(this).apply {
-            text = "Payload Templates (with optional parameters):"
-            textSize = 12f
-            setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 6)
-        }
-        testContainer.addView(chipLabel)
-
+        // Template chips row
         chipRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 12)
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            layoutParams = params
+            setPadding(0, 0, 0, 8)
         }
-        
-        val hScroller = HorizontalScrollView(this).apply {
+        val chipScroller = HorizontalScrollView(this).apply {
             addView(chipRow)
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 16)
+                setMargins(0, 0, 0, 8)
             }
             layoutParams = params
         }
-        testContainer.addView(hScroller)
-
-        // Editor
-        val editLabel = TextView(this).apply {
-            text = "JSON Request Body:"
-            textSize = 12f
-            setTextColor(Color.parseColor("#888888"))
-            setPadding(0, 0, 0, 8)
-        }
-        testContainer.addView(editLabel)
+        rawJsonContainer.addView(chipScroller)
 
         payloadEditor = EditText(this).apply {
-            textSize = 11f
-            setTextColor(Color.parseColor("#555555"))
-            setBackgroundColor(Color.parseColor("#1C1C1C"))
-            setPadding(16, 16, 16, 16)
+            textSize = 10f
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
+            setPadding(12, 12, 12, 12)
             typeface = Typeface.MONOSPACE
             minLines = 4
             maxLines = 6
             gravity = Gravity.TOP
             isEnabled = false
         }
-        testContainer.addView(payloadEditor)
+        rawJsonContainer.addView(payloadEditor)
 
-        runTestBtn = Button(this).apply {
-            text = "Run API Suite Test"
+        runRawTestBtn = Button(this).apply {
+            text = "[ ▶ EXECUTE RAW REQUEST ]"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#22AA55"))
-            setPadding(20, 16, 20, 16)
+            setBackgroundColor(Color.parseColor("#00AA55"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 16, 0, 16)
+                setMargins(0, 10, 0, 0)
             }
             layoutParams = params
-            setOnClickListener { executeClientApiTest() }
+            setOnClickListener { executeRawApiTest() }
         }
-        testContainer.addView(runTestBtn)
+        rawJsonContainer.addView(runRawTestBtn)
 
-        // Diagnostics row
+        testContainer.addView(rawJsonContainer)
+
+        // --- SECTION 4: DIAGNOSTICS ROW ---
         val metricsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 16)
+            setPadding(0, 0, 0, 12)
         }
 
         val boxParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
@@ -1465,19 +1624,25 @@ class MainActivity : AppCompatActivity() {
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setBackgroundColor(Color.parseColor("#1C1C1C"))
-                setPadding(12, 12, 12, 12)
+                val bg = GradientDrawable().apply {
+                    setColor(Color.parseColor("#161616"))
+                    cornerRadius = 6f
+                    setStroke(1, Color.parseColor("#2A2A2A"))
+                }
+                background = bg
+                setPadding(10, 10, 10, 10)
             }
             val t = TextView(this).apply {
                 text = title
-                textSize = 8f
+                textSize = 9f
                 setTextColor(Color.parseColor("#888888"))
+                typeface = Typeface.MONOSPACE
             }
             val valView = TextView(this).apply {
                 text = "---"
-                textSize = 12f
+                textSize = 11f
                 setTextColor(Color.WHITE)
-                typeface = Typeface.DEFAULT_BOLD
+                typeface = Typeface.MONOSPACE
             }
             metricRef(valView)
             box.addView(t)
@@ -1487,14 +1652,15 @@ class MainActivity : AppCompatActivity() {
 
         metricsRow.addView(createMetricBox("LATENCY") { latencyMetric = it }.apply { layoutParams = boxParams })
         metricsRow.addView(createMetricBox("HTTP STATUS") { statusMetric = it }.apply { layoutParams = boxParams })
-        
         val lastBoxParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
         metricsRow.addView(createMetricBox("PAYLOAD SIZE") { sizeMetric = it }.apply { layoutParams = lastBoxParams })
-        
         testContainer.addView(metricsRow)
 
-        testConsole = CollapsibleLogConsole(this, "API Client Output:")
+        // --- SECTION 5: CONSOLE OUTPUT ---
+        testConsole = CollapsibleLogConsole(this, "API Response Console:")
         testContainer.addView(testConsole)
+
+        refreshPayloadEditor()
     }
 
     private fun setProtocolMode(mode: String) {
@@ -1502,9 +1668,9 @@ class MainActivity : AppCompatActivity() {
         activeProtocol = mode
 
         val openaiActive = mode == "OpenAI"
-        openAiPill.setBackgroundColor(Color.parseColor(if (openaiActive) "#3366BB" else "#222222"))
+        openAiPill.setBackgroundColor(Color.parseColor(if (openaiActive) "#222222" else "#161616"))
         openAiPill.setTextColor(Color.parseColor(if (openaiActive) "#FFFFFF" else "#888888"))
-        ollamaPill.setBackgroundColor(Color.parseColor(if (!openaiActive) "#3366BB" else "#222222"))
+        ollamaPill.setBackgroundColor(Color.parseColor(if (!openaiActive) "#222222" else "#161616"))
         ollamaPill.setTextColor(Color.parseColor(if (!openaiActive) "#FFFFFF" else "#888888"))
 
         if (openaiActive) {
@@ -1523,11 +1689,11 @@ class MainActivity : AppCompatActivity() {
     private fun setEndpointSelection(index: Int) {
         selectedEndpointIndex = index
 
-        epPill1.setBackgroundColor(Color.parseColor(if (index == 0) "#3366BB" else "#222222"))
+        epPill1.setBackgroundColor(Color.parseColor(if (index == 0) "#222222" else "#161616"))
         epPill1.setTextColor(Color.parseColor(if (index == 0) "#FFFFFF" else "#888888"))
-        epPill2.setBackgroundColor(Color.parseColor(if (index == 1) "#3366BB" else "#222222"))
+        epPill2.setBackgroundColor(Color.parseColor(if (index == 1) "#222222" else "#161616"))
         epPill2.setTextColor(Color.parseColor(if (index == 1) "#FFFFFF" else "#888888"))
-        epPill3.setBackgroundColor(Color.parseColor(if (index == 2) "#3366BB" else "#222222"))
+        epPill3.setBackgroundColor(Color.parseColor(if (index == 2) "#222222" else "#161616"))
         epPill3.setTextColor(Color.parseColor(if (index == 2) "#FFFFFF" else "#888888"))
 
         refreshPayloadEditor()
@@ -1535,18 +1701,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshPayloadEditor() {
         val isGet = if (activeProtocol == "OpenAI") selectedEndpointIndex < 2 else selectedEndpointIndex == 0
-        
-        // Remove old chips
         chipRow.removeAllViews()
 
         if (isGet) {
             payloadEditor.setText("[GET Request - No Payload Body]")
             payloadEditor.isEnabled = false
-            payloadEditor.setBackgroundColor(Color.parseColor("#1C1C1C"))
+            payloadEditor.setBackgroundColor(Color.parseColor("#141414"))
             payloadEditor.setTextColor(Color.parseColor("#555555"))
             chipRow.addView(TextView(this).apply {
                 text = "No parameters for GET routes"
                 textSize = 10f
+                typeface = Typeface.MONOSPACE
                 setTextColor(Color.parseColor("#555555"))
             })
         } else {
@@ -1555,75 +1720,150 @@ class MainActivity : AppCompatActivity() {
             payloadEditor.setTextColor(Color.parseColor("#00FF66"))
 
             val chipParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(0, 0, 6, 0)
             }
 
             if (activeProtocol == "OpenAI") {
-                // OpenAI payload options
-                val body1 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Hello local LLM!\"\n    }\n  ],\n  \"temperature\": 0.7\n}"
-                val body2 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Explain gravity in 1 line.\"\n    }\n  ],\n  \"temperature\": 0.2,\n  \"max_tokens\": 50,\n  \"top_p\": 0.9\n}"
-                val body3 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Count to 5.\"\n    }\n  ],\n  \"temperature\": 0.8,\n  \"stream\": true\n}"
+                val body1 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Hello local LLM!\"}\n  ],\n  \"temperature\": 0.7\n}"
+                val body2 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Explain gravity in 1 line.\"}\n  ],\n  \"temperature\": 0.2,\n  \"max_tokens\": 50,\n  \"top_p\": 0.9\n}"
+                val body3 = "{\n  \"model\": \"meta-llama-3-8b-instruct\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Count from 1 to 5.\"}\n  ],\n  \"temperature\": 0.8,\n  \"stream\": true\n}"
 
                 payloadEditor.setText(body1)
 
-                chipRow.addView(Button(this).apply {
-                    text = "📄 Simple"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body1) }
-                }, chipParams)
-
-                chipRow.addView(Button(this).apply {
-                    text = "⚙️ Custom (Temp/Tokens)"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body2) }
-                }, chipParams)
-
-                chipRow.addView(Button(this).apply {
-                    text = "🌊 Stream"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body3) }
-                }, chipParams)
+                val createChip = { label: String, text: String ->
+                    Button(this).apply {
+                        this.text = label
+                        textSize = 9f
+                        typeface = Typeface.MONOSPACE
+                        setTextColor(Color.parseColor("#CCCCCC"))
+                        setBackgroundColor(Color.parseColor("#222222"))
+                        setPadding(10, 4, 10, 4)
+                        setOnClickListener { payloadEditor.setText(text) }
+                    }
+                }
+                chipRow.addView(createChip("[ Simple ]", body1), chipParams)
+                chipRow.addView(createChip("[ Custom ]", body2), chipParams)
+                chipRow.addView(createChip("[ Stream ]", body3), chipParams)
             } else {
-                // Ollama payload options
-                val body1 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"hello!\"\n    }\n  ],\n  \"stream\": false\n}"
-                val body2 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Suggest 1 dog name.\"\n    }\n  ],\n  \"options\": {\n    \"temperature\": 0.3,\n    \"num_predict\": 40\n  },\n  \"stream\": false\n}"
-                val body3 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Count to 3.\"\n    }\n  ],\n  \"stream\": true\n}"
+                val body1 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"hello!\"}\n  ],\n  \"stream\": false\n}"
+                val body2 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Suggest 1 dog name.\"}\n  ],\n  \"options\": {\"temperature\": 0.3, \"num_predict\": 40},\n  \"stream\": false\n}"
+                val body3 = "{\n  \"model\": \"llama3\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Count to 3.\"}\n  ],\n  \"stream\": true\n}"
 
                 payloadEditor.setText(body1)
 
-                chipRow.addView(Button(this).apply {
-                    text = "📄 Basic"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body1) }
-                }, chipParams)
-
-                chipRow.addView(Button(this).apply {
-                    text = "⚙️ Custom (Temp/Predict)"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body2) }
-                }, chipParams)
-
-                chipRow.addView(Button(this).apply {
-                    text = "🌊 Stream"
-                    textSize = 9f
-                    setPadding(12, 4, 12, 4)
-                    setOnClickListener { payloadEditor.setText(body3) }
-                }, chipParams)
+                val createChip = { label: String, text: String ->
+                    Button(this).apply {
+                        this.text = label
+                        textSize = 9f
+                        typeface = Typeface.MONOSPACE
+                        setTextColor(Color.parseColor("#CCCCCC"))
+                        setBackgroundColor(Color.parseColor("#222222"))
+                        setPadding(10, 4, 10, 4)
+                        setOnClickListener { payloadEditor.setText(text) }
+                    }
+                }
+                chipRow.addView(createChip("[ Basic ]", body1), chipParams)
+                chipRow.addView(createChip("[ Custom ]", body2), chipParams)
+                chipRow.addView(createChip("[ Stream ]", body3), chipParams)
             }
         }
     }
 
-    private fun executeClientApiTest() {
-        if (!LlmServerService.isServiceRunning) {
-            ServerConsole.log(LogCategory.UI, "Test Suite: Blocked. Ktor server is offline.")
+    private fun escapeJson(text: String): String {
+        return text.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\b", "\\b")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+    }
+
+    private fun executeQuickPrompt() {
+        val prompt = quickShellInput.text.toString().trim()
+        if (prompt.isEmpty()) {
+            Toast.makeText(this, "Please enter a prompt", Toast.LENGTH_SHORT).show()
             return
         }
 
+        val jsonBody = """
+            {
+              "model": "edge-model",
+              "messages": [
+                {"role": "user", "content": "${escapeJson(prompt)}"}
+              ],
+              "temperature": 0.7,
+              "stream": $isQuickStreamEnabled
+            }
+        """.trimIndent()
+
+        executeHttpCall(
+            method = "POST",
+            path = "/v1/chat/completions",
+            body = jsonBody,
+            isStream = isQuickStreamEnabled,
+            triggerButton = quickShellSendBtn,
+            buttonDefaultText = "[ > SEND ]"
+        )
+    }
+
+    private fun executePresetS1Recall() {
+        val jsonBody = """
+            {
+              "model": "edge-model",
+              "messages": [
+                {"role": "user", "content": "My secret code is ALPHA-77. Remember it."},
+                {"role": "assistant", "content": "Understood. Your secret code is ALPHA-77."},
+                {"role": "user", "content": "What is my secret code?"}
+              ],
+              "temperature": 0.2,
+              "stream": false
+            }
+        """.trimIndent()
+
+        executeHttpCall(
+            method = "POST",
+            path = "/v1/chat/completions",
+            body = jsonBody,
+            isStream = false,
+            triggerButton = presetS1Btn,
+            buttonDefaultText = "[ S1 RECALL ]"
+        )
+    }
+
+    private fun executePresetStream() {
+        val jsonBody = """
+            {
+              "model": "edge-model",
+              "messages": [
+                {"role": "user", "content": "Count slowly from 1 to 5 with commas."}
+              ],
+              "temperature": 0.7,
+              "stream": true
+            }
+        """.trimIndent()
+
+        executeHttpCall(
+            method = "POST",
+            path = "/v1/chat/completions",
+            body = jsonBody,
+            isStream = true,
+            triggerButton = presetStreamBtn,
+            buttonDefaultText = "[ STREAM ]"
+        )
+    }
+
+    private fun executePresetHealth() {
+        executeHttpCall(
+            method = "GET",
+            path = "/health",
+            body = null,
+            isStream = false,
+            triggerButton = presetHealthBtn,
+            buttonDefaultText = "[ HEALTH ]"
+        )
+    }
+
+    private fun executeRawApiTest() {
         var method = "GET"
         var path = "/health"
         var body: String? = null
@@ -1641,37 +1881,144 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val isStream = body?.contains("\"stream\": true") == true || body?.contains("\"stream\":true") == true
+
+        executeHttpCall(
+            method = method,
+            path = path,
+            body = body,
+            isStream = isStream,
+            triggerButton = runRawTestBtn,
+            buttonDefaultText = "[ ▶ EXECUTE RAW REQUEST ]"
+        )
+    }
+
+    private fun executePresetQueueStress() {
+        if (!LlmServerService.isServiceRunning) {
+            ServerConsole.log(LogCategory.UI, "Queue Stress: Blocked. HTTP server is offline.")
+            Toast.makeText(this, "HTTP Server is offline", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") "localhost" else LlmServerService.activeBindHost
-        val requestString = "$method $path HTTP/1.1\nHost: $activeHost:8080\nContent-Type: application/json\n\n${body ?: ""}"
-        
+        testConsole.setText(">>> S2 QUEUE STRESS TEST: Dispatching 5 concurrent HTTP requests to verify FIFO serialization and HTTP 429 capacity backpressure...\n(Max queue capacity: 4 slots)\n\n")
+
+        latencyMetric.text = "---"
+        statusMetric.text = "STRESS..."
+        statusMetric.setTextColor(Color.parseColor("#FFBB33"))
+        sizeMetric.text = "5 calls"
+
+        presetS2QueueBtn.setVisualEnabled(false)
+        presetS2QueueBtn.text = "Running 5x..."
+
+        Thread {
+            val results = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val countDownLatch = java.util.concurrent.CountDownLatch(5)
+            val startTime = System.currentTimeMillis()
+
+            for (i in 1..5) {
+                Thread {
+                    val reqStart = System.currentTimeMillis()
+                    var code = -1
+                    var respSnippet = ""
+                    try {
+                        val conn = URL("http://$activeHost:8080/v1/chat/completions").openConnection() as HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.connectTimeout = 5000
+                        conn.readTimeout = 125000
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.doOutput = true
+
+                        val body = """{"model":"edge-model","messages":[{"role":"user","content":"Stress task #$i"}],"stream":false}"""
+                        val bytes = body.toByteArray(StandardCharsets.UTF_8)
+                        conn.setFixedLengthStreamingMode(bytes.size)
+                        conn.outputStream.use { it.write(bytes) }
+
+                        code = conn.responseCode
+                        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                        val raw = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
+                        respSnippet = if (raw.length > 80) raw.take(80) + "..." else raw
+                    } catch (e: Exception) {
+                        code = -1
+                        respSnippet = "Err: ${e.message}"
+                    } finally {
+                        val elapsed = System.currentTimeMillis() - reqStart
+                        val tag = when (code) {
+                            200 -> "[ 200 OK (FIFO Sequenced) ]"
+                            429 -> "[ 429 RATE LIMIT EXCEEDED (Queue Guard Verified!) ]"
+                            else -> "[ HTTP $code ]"
+                        }
+                        val line = "Req #$i: $tag in ${elapsed}ms -> $respSnippet"
+                        results.add(line)
+                        runOnUiThread {
+                            testConsole.append(line + "\n")
+                        }
+                        countDownLatch.countDown()
+                    }
+                }.start()
+            }
+
+            countDownLatch.await()
+            val totalTime = System.currentTimeMillis() - startTime
+
+            runOnUiThread {
+                presetS2QueueBtn.setVisualEnabled(true)
+                presetS2QueueBtn.text = "[ S2 QUEUE ]"
+                latencyMetric.text = "${totalTime}ms"
+                statusMetric.text = "STRESS DONE"
+                statusMetric.setTextColor(Color.parseColor("#00FF66"))
+                testConsole.append("\n>>> STRESS TEST COMPLETE in ${totalTime}ms. RequestQueue S2 verification finished.\n")
+            }
+        }.start()
+    }
+
+    private fun executeHttpCall(
+        method: String,
+        path: String,
+        body: String?,
+        isStream: Boolean,
+        triggerButton: Button? = null,
+        buttonDefaultText: String = ""
+    ) {
+        if (!LlmServerService.isServiceRunning) {
+            ServerConsole.log(LogCategory.UI, "Test Suite: Blocked. HTTP server is offline.")
+            Toast.makeText(this, "HTTP Server is offline", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") "localhost" else LlmServerService.activeBindHost
+        val requestString = "$method $path HTTP/1.1\nHost: $activeHost:8080\nContent-Type: application/json\nAccept: ${if (isStream) "text/event-stream" else "application/json"}\n\n${body ?: ""}"
+
         testConsole.setText(">>> HTTP REQUEST:\n$requestString\n\n----------------------------\n\n<<< RESPONSE:\n")
         latencyMetric.text = "---"
         statusMetric.text = "..."
         statusMetric.setTextColor(Color.WHITE)
         sizeMetric.text = "---"
 
-        // Live timer setup
         isTestingApi = true
+        activeTestButton = triggerButton
+        defaultTestButtonText = buttonDefaultText
         testStartTime = System.currentTimeMillis()
-        runTestBtn.setVisualEnabled(false)
+        triggerButton?.setVisualEnabled(false)
         testTimerHandler.post(testTimerRunnable)
 
         Thread {
             val start = System.currentTimeMillis()
             var code = -1
-            var response = ""
+            val responseSb = StringBuilder()
             var success = false
 
             try {
                 val conn = URL("http://$activeHost:8080$path").openConnection() as HttpURLConnection
                 conn.requestMethod = method
                 conn.connectTimeout = 5000
-                conn.readTimeout = 60000 // 60 Seconds Read Timeout to prevent LLM timeouts
+                conn.readTimeout = 125000
                 conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", if (isStream) "text/event-stream" else "application/json")
 
                 if (method == "POST" && body != null) {
                     conn.doOutput = true
-                    val b = body.encodeToByteArray()
+                    val b = body.toByteArray(StandardCharsets.UTF_8)
                     conn.setFixedLengthStreamingMode(b.size)
                     conn.outputStream.use { it.write(b) }
                 }
@@ -1679,27 +2026,62 @@ class MainActivity : AppCompatActivity() {
                 code = conn.responseCode
                 success = code in 200..299
                 val stream = if (success) conn.inputStream else conn.errorStream
-                response = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
-            } catch (e: java.io.IOException) {
-                response = "Connection exception: ${e.message}\n\nIs the background daemon running and the model fully initialized?"
+
+                if (isStream && success && stream != null) {
+                    val reader = stream.bufferedReader(StandardCharsets.UTF_8)
+                    var line = reader.readLine()
+                    while (line != null) {
+                        responseSb.append(line).append("\n")
+                        val currentLine = line
+                        runOnUiThread {
+                            testConsole.append(currentLine + "\n")
+                            sizeMetric.text = "${responseSb.length} B"
+                        }
+                        line = reader.readLine()
+                    }
+                } else {
+                    val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
+                    responseSb.append(text)
+                    runOnUiThread {
+                        testConsole.append(text)
+                    }
+                }
+            } catch (e: Exception) {
+                val errText = "Connection Exception: ${e.message}\nEnsure background daemon is active and engine loaded."
+                responseSb.append(errText)
+                runOnUiThread {
+                    testConsole.append(errText)
+                }
             }
 
             val diff = System.currentTimeMillis() - start
+            val finalResp = responseSb.toString()
             runOnUiThread {
                 isTestingApi = false
-                runTestBtn.setVisualEnabled(true)
-                runTestBtn.text = "Run API Suite Test"
-                
+                triggerButton?.setVisualEnabled(true)
+                triggerButton?.text = buttonDefaultText
+
                 latencyMetric.text = "${diff}ms"
-                statusMetric.text = if (code != -1) "$code" else "ERR"
-                statusMetric.setTextColor(if (success) Color.parseColor("#00FF66") else Color.parseColor("#FF4444"))
-                sizeMetric.text = "${response.length} chars"
-                testConsole.append(response)
+                statusMetric.text = when (code) {
+                    200 -> "200 OK"
+                    429 -> "429 RATE LIMIT"
+                    500 -> "500 ERR"
+                    -1 -> "CONN ERR"
+                    else -> "$code"
+                }
+                statusMetric.setTextColor(
+                    when {
+                        code in 200..299 -> Color.parseColor("#00FF66")
+                        code == 429 -> Color.parseColor("#FF8800")
+                        else -> Color.parseColor("#FF4444")
+                    }
+                )
+                sizeMetric.text = "${finalResp.length} B"
             }
         }.start()
     }
 
-    // --- TAB 4: SYSTEM LOGS LAYOUT (Wrapped inside ScrollView) ---
+    // --- TAB 4: CONSOLIDATED SYSTEM LOGS LAYOUT ---
 
     private fun createLogsTab() {
         val logsContainer = LinearLayout(this).apply {
@@ -1713,60 +2095,109 @@ class MainActivity : AppCompatActivity() {
 
         val sectionTitle = TextView(this).apply {
             text = "Consolidated System Logs"
-            textSize = 16f
+            textSize = 15f
             setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, 16)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 14)
         }
         logsContainer.addView(sectionTitle)
 
-        // Filter pills inside horizontal scroll view
+        // Action Toolbar: Copy & Clear buttons
+        val toolbarRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 10)
+            }
+            layoutParams = params
+        }
+
+        copyLogsBtn = Button(this).apply {
+            text = "[ 📋 COPY ALL ]"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = params
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Server Logs", fullSystemConsole.getText())
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this@MainActivity, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+        }
+        toolbarRow.addView(copyLogsBtn)
+
+        clearLogsBtn = Button(this).apply {
+            text = "[ 🗑️ CLEAR LOGS ]"
+            setTextColor(Color.parseColor("#FF6666"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = params
+            setOnClickListener {
+                ServerConsole.clear()
+                refreshSystemLogsView()
+                Toast.makeText(this@MainActivity, "Logs buffer cleared", Toast.LENGTH_SHORT).show()
+            }
+        }
+        toolbarRow.addView(clearLogsBtn)
+        logsContainer.addView(toolbarRow)
+
+        // Category filter pills inside horizontal scroll view
         val filterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 16)
+            setPadding(0, 0, 0, 12)
         }
         val horizontalScroll = HorizontalScrollView(this).apply {
             addView(filterRow)
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, 12)
+                setMargins(0, 0, 0, 10)
             }
             layoutParams = params
         }
         logsContainer.addView(horizontalScroll)
 
         val pillParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(0, 0, 8, 0)
+            setMargins(0, 0, 6, 0)
         }
 
         filterAllBtn = Button(this).apply {
             text = "All Logs"
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { setLogsFilter("ALL") }
         }
         filterRow.addView(filterAllBtn, pillParams)
 
         filterServerBtn = Button(this).apply {
             text = "Server"
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { setLogsFilter("SERVER") }
         }
         filterRow.addView(filterServerBtn, pillParams)
 
         filterEngineBtn = Button(this).apply {
             text = "Engine"
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { setLogsFilter("ENGINE") }
         }
         filterRow.addView(filterEngineBtn, pillParams)
 
         filterUiBtn = Button(this).apply {
             text = "UI"
-            textSize = 10f
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
             setOnClickListener { setLogsFilter("UI") }
         }
         filterRow.addView(filterUiBtn, pillParams)
 
-        fullSystemConsole = CollapsibleLogConsole(this, "Selectable Logs Output:")
+        fullSystemConsole = CollapsibleLogConsole(this, "Live System Console Output:")
         logsContainer.addView(fullSystemConsole)
 
         setLogsFilter("ALL")
@@ -1780,17 +2211,17 @@ class MainActivity : AppCompatActivity() {
         val isEngine = filter == "ENGINE"
         val isUi = filter == "UI"
 
-        filterAllBtn.setBackgroundColor(Color.parseColor(if (isAll) "#3366BB" else "#222222"))
-        filterAllBtn.setTextColor(Color.parseColor(if (isAll) "#FFFFFF" else "#888888"))
+        filterAllBtn.setBackgroundColor(Color.parseColor(if (isAll) "#2A2A2A" else "#161616"))
+        filterAllBtn.setTextColor(Color.parseColor(if (isAll) "#00FF66" else "#888888"))
 
-        filterServerBtn.setBackgroundColor(Color.parseColor(if (isServer) "#3366BB" else "#222222"))
-        filterServerBtn.setTextColor(Color.parseColor(if (isServer) "#FFFFFF" else "#888888"))
+        filterServerBtn.setBackgroundColor(Color.parseColor(if (isServer) "#2A2A2A" else "#161616"))
+        filterServerBtn.setTextColor(Color.parseColor(if (isServer) "#00FF66" else "#888888"))
 
-        filterEngineBtn.setBackgroundColor(Color.parseColor(if (isEngine) "#3366BB" else "#222222"))
-        filterEngineBtn.setTextColor(Color.parseColor(if (isEngine) "#FFFFFF" else "#888888"))
+        filterEngineBtn.setBackgroundColor(Color.parseColor(if (isEngine) "#2A2A2A" else "#161616"))
+        filterEngineBtn.setTextColor(Color.parseColor(if (isEngine) "#00FF66" else "#888888"))
 
-        filterUiBtn.setBackgroundColor(Color.parseColor(if (isUi) "#3366BB" else "#222222"))
-        filterUiBtn.setTextColor(Color.parseColor(if (isUi) "#FFFFFF" else "#888888"))
+        filterUiBtn.setBackgroundColor(Color.parseColor(if (isUi) "#2A2A2A" else "#161616"))
+        filterUiBtn.setTextColor(Color.parseColor(if (isUi) "#00FF66" else "#888888"))
 
         refreshSystemLogsView()
     }
@@ -1813,30 +2244,13 @@ class MainActivity : AppCompatActivity() {
         fullSystemConsole.setText(sb.toString().trimEnd())
 
         // Also update filter labels with line counts
-        filterAllBtn.text = "All Logs (${ServerConsole.getLogs().size})"
-        filterServerBtn.text = "Server (${ServerConsole.getLogs(LogCategory.SERVER).size})"
-        filterEngineBtn.text = "Engine (${ServerConsole.getLogs(LogCategory.ENGINE).size})"
+        filterAllBtn.text = "ALL (${ServerConsole.getLogs().size})"
+        filterServerBtn.text = "SERVER (${ServerConsole.getLogs(LogCategory.SERVER).size})"
+        filterEngineBtn.text = "ENGINE (${ServerConsole.getLogs(LogCategory.ENGINE).size})"
         filterUiBtn.text = "UI (${ServerConsole.getLogs(LogCategory.UI).size})"
     }
 
-    // --- OTHER HELPERS ---
-
-    private fun refreshIpAddress() {
-        val ip = when (selectedBindingInterface) {
-            "Wi-Fi" -> getInterfaceIp("Wi-Fi")
-            "Mobile" -> getInterfaceIp("Mobile")
-            else -> getLocalIpAddress()
-        }
-        ServerConsole.log(LogCategory.UI, "Resolved active socket bind address: $ip")
-    }
-
     private fun refreshConsoleLogs() {
-        val cached = ServerConsole.getLogs()
-        val sb = StringBuilder()
-        for (entry in cached) {
-            sb.append(entry.toFormattedString()).append("\n")
-        }
-        serverConsole.setText(ServerConsole.getLogs(LogCategory.SERVER).takeLast(3).joinToString("\n") { it.toFormattedString() })
         refreshSystemLogsView()
     }
 
