@@ -22,15 +22,20 @@ Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 
 4. **Parsing Stream SSE & Quick Shell Response Card**: Risolto l'output dei chunk SSE grezzi (`data: {"choices":[{"delta":...}]}`). Implementato `extractContentFromChunk` e creata la `quickShellResponseCard` con streaming testo in tempo reale, conteggio token/latenza, pulsante `[ COPY ]` e formattazione evidenziata `<<< ASSISTANT OUTPUT:` nella console test.
 5. **Bonifica Totale Cartella Modelli**: Estesa la scansione in `ModelManager.purgeCacheFiles()` affinché ogni file non `.litertlm` (inclusi residui `.bin`, `.tmp`, `.cache` lasciati da vecchie esecuzioni) presente in `/sdcard/Download/llm-server/models/` venga rimosso incondizionatamente sia all'avvio che alla chiusura.
 6. **Telemetria RAM Chiara & Trasparenza GC**: Riformattata la visualizzazione della RAM fisica in GB con indicazione della cache Linux del sistema operativo (`%.1f GB free / %.1f GB total (%d%% OS cached)`), affiancata all'Heap del processo JVM (`$usedMem MB / $maxMem MB`). Azione Trim aggiornata per quantificare con precisione i kilobyte/megabyte recuperati dal garbage collector, con nota esplicativa sul rilascio dinamico della memoria da parte del kernel Linux.
+7. **Hardware & SoC Profiling**: Integrato il rilevamento automatico delle specifiche hardware del dispositivo (`ModelManager.getHardwareProfile()`): modello esatto, SoC/Chipset, architettura e core CPU, supporto driver GPU OpenCL, versione Android. Visualizzato in una card dedicata in Tab 1 (`> DEVICE HARDWARE & SOC SPECS`).
+8. **RAM Audit & Deep Sweep (4GB Ready)**: Implementato il pulsante `[ 🔍 AUDIT & DEEP SWEEP (4GB READY) ]` e il dialog modale TUI con doppio check:
+   - Valutazione di fattibilità del modello rispetto al picco di allocazione (pesi + shader scratch GPU + KV-cache).
+   - Guida operativa per vecchi dispositivi/Samsung One UI (attivazione RAM Plus 8GB, limite processi background, profilo aereo + Wi-Fi).
+   - Esecuzione di `KILL_BACKGROUND_PROCESSES` per terminare app terze in cache, purge cache e GC forzato con riscontro numerico della RAM recuperata.
 
 ## Prossimo passo
 
 - Eseguire commit e push su branch `feature/request-queue` (PR #8).
 - Verificare il passaggio dei test e la compilazione dell'APK debug su GitHub Actions CI (`android-ci.yml`).
-- Collaudo su Google Pixel 9:
-  - Invio di "ciao" da Quick Shell con verifica del testo in chiaro renderizzato live nell'output box.
-  - Verifica della scomparsa dei file `.bin` residui dalla cartella `/sdcard/Download/llm-server/models/`.
-  - Verifica delle metriche RAM espresse in GB e del feedback numerico sul trim GC.
+- Collaudo su Google Pixel 9 e Galaxy S20 FE:
+  - Verifica della card hardware con visualizzazione immediata di SoC, CPU core e driver OpenCL.
+  - Test del dialog `[ 🔍 AUDIT & DEEP SWEEP ]` e verifica del recupero RAM post-sweep.
+  - Verifica invio prompt e visualizzazione in chiaro del testo assistente nella Quick Shell.
 
 ## Decisioni e vincoli attivi
 

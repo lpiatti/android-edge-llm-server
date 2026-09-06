@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.edge.llm.server.model.ModelManager
 import com.edge.llm.server.service.LlmServerService
@@ -981,6 +982,42 @@ class MainActivity : AppCompatActivity() {
         actionsRow.addView(stopModelBtn)
         modelContainer.addView(actionsRow)
 
+        // Hardware & SoC Architecture Telemetry Card
+        val hwCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 14, 16, 14)
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#141414"))
+                cornerRadius = 8f
+                setStroke(1, Color.parseColor("#2A2A2A"))
+            }
+            background = bg
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 14)
+            }
+            layoutParams = params
+        }
+
+        val hwTitle = TextView(this).apply {
+            text = "> DEVICE HARDWARE & SOC SPECS"
+            textSize = 11f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 6)
+        }
+        hwCard.addView(hwTitle)
+
+        val hwProfile = ModelManager.getHardwareProfile(this)
+        val hwInfoTv = TextView(this).apply {
+            text = "Device:   ${hwProfile.fullDeviceLine()}\nSoC/Arch: ${hwProfile.soc} | ${hwProfile.cpuCores} CPU Cores (${hwProfile.primaryAbi})\nGraphics: ${if (hwProfile.isOpenClAvailable) "OpenCL GPU Acceleration Available" else "No OpenCL (CPU Execution Only)"}"
+            textSize = 9.5f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(3f, 1f)
+        }
+        hwCard.addView(hwInfoTv)
+        modelContainer.addView(hwCard)
+
         // Memory & Cache Management Card
         val memoryCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1074,6 +1111,27 @@ class MainActivity : AppCompatActivity() {
         memBtnRow.addView(purgeBtn)
         memoryCard.addView(memBtnRow)
 
+        val auditSweepBtn = Button(this).apply {
+            text = "[ 🔍 AUDIT & DEEP SWEEP (4GB READY) ]"
+            setTextColor(Color.parseColor("#00FF66"))
+            val strokeBg = GradientDrawable().apply {
+                setColor(Color.parseColor("#152515"))
+                cornerRadius = 4f
+                setStroke(1, Color.parseColor("#008833"))
+            }
+            background = strokeBg
+            textSize = 9.5f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 10, 0, 0)
+            }
+            layoutParams = params
+            setOnClickListener {
+                showDeepSweepAuditDialog(memStatsTv)
+            }
+        }
+        memoryCard.addView(auditSweepBtn)
+
         modelContainer.addView(memoryCard)
 
         val engineNote = TextView(this).apply {
@@ -1084,6 +1142,215 @@ class MainActivity : AppCompatActivity() {
             setPadding(4, 4, 4, 4)
         }
         modelContainer.addView(engineNote)
+    }
+
+    private fun showDeepSweepAuditDialog(memStatsTv: TextView) {
+        val hw = ModelManager.getHardwareProfile(this)
+        val mem = ModelManager.getSystemMemoryInfo(this)
+        val selectedFile = selectedModelPath?.let { File(it) }
+        val audit = ModelManager.auditModelFeasibility(this, selectedFile)
+
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#121212"))
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+            setBackgroundColor(Color.parseColor("#121212"))
+        }
+        scroll.addView(container)
+
+        // Title
+        val titleTv = TextView(this).apply {
+            text = "=== RAM AUDIT & NODE OPTIMIZER ==="
+            textSize = 12f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 14)
+        }
+        container.addView(titleTv)
+
+        // 1. Hardware Specifications Box
+        val hwBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1A1A1A"))
+                cornerRadius = 6f
+                setStroke(1, Color.parseColor("#333333"))
+            }
+            background = bg
+            setPadding(14, 12, 14, 12)
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 12)
+            }
+            layoutParams = p
+        }
+        val hwLabel = TextView(this).apply {
+            text = "[ HARDWARE & SOC SPECS ]"
+            textSize = 10f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 4)
+        }
+        val hwDetails = TextView(this).apply {
+            text = "Device:   ${hw.fullDeviceLine()}\nSoC/Arch: ${hw.soc} | ${hw.cpuCores} Cores (${hw.primaryAbi})\nGraphics: ${if (hw.isOpenClAvailable) "OpenCL GPU Available" else "No OpenCL (CPU Only)"}\nRAM Total: ${mem.totalMemMb} MB (%.1f GB)".format(mem.totalMemGb)
+            textSize = 9f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(3f, 1f)
+        }
+        hwBox.addView(hwLabel)
+        hwBox.addView(hwDetails)
+        container.addView(hwBox)
+
+        // 2. Feasibility Assessment Box
+        val auditBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1A1A1A"))
+                cornerRadius = 6f
+                val strokeColor = when (audit.level) {
+                    com.edge.llm.server.model.FeasibilityLevel.SAFE -> Color.parseColor("#008833")
+                    com.edge.llm.server.model.FeasibilityLevel.TIGHT -> Color.parseColor("#AA7700")
+                    com.edge.llm.server.model.FeasibilityLevel.CRITICAL_OOM_RISK -> Color.parseColor("#AA2222")
+                }
+                setStroke(1, strokeColor)
+            }
+            background = bg
+            setPadding(14, 12, 14, 12)
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 12)
+            }
+            layoutParams = p
+        }
+        val statusTitle = when (audit.level) {
+            com.edge.llm.server.model.FeasibilityLevel.SAFE -> "● STATUS: SAFE TO LOAD"
+            com.edge.llm.server.model.FeasibilityLevel.TIGHT -> "▲ STATUS: RAM IS TIGHT"
+            com.edge.llm.server.model.FeasibilityLevel.CRITICAL_OOM_RISK -> "■ STATUS: CRITICAL OOM RISK (4GB+)"
+        }
+        val statusColor = when (audit.level) {
+            com.edge.llm.server.model.FeasibilityLevel.SAFE -> Color.parseColor("#00FF66")
+            com.edge.llm.server.model.FeasibilityLevel.TIGHT -> Color.parseColor("#FFBB33")
+            com.edge.llm.server.model.FeasibilityLevel.CRITICAL_OOM_RISK -> Color.parseColor("#FF4444")
+        }
+        val auditLabel = TextView(this).apply {
+            text = statusTitle
+            textSize = 10f
+            setTextColor(statusColor)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 4)
+        }
+        val auditText = TextView(this).apply {
+            val modelName = if (selectedFile != null) selectedFile.name else "4.0 GB Model Reference"
+            val sizeStr = if (selectedFile != null) "%.2f GB".format(audit.modelSizeMb / 1024.0) else "~4.00 GB"
+            val peakStr = if (selectedFile != null) "%.2f GB".format(audit.estimatedPeakAllocationMb / 1024.0) else "~5.60 GB"
+            text = "Target Model:   $modelName\nModel Size:     $sizeStr\nEstimated Peak: $peakStr (Weights + Shader Scratch)\nAvailable RAM:  ${mem.availMemMb} MB free (%.1f GB)\n\nAssessment:\n${audit.recommendation}".format(mem.availMemGb)
+            textSize = 9f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(3f, 1f)
+        }
+        auditBox.addView(auditLabel)
+        auditBox.addView(auditText)
+        container.addView(auditBox)
+
+        // 3. Recommended Policies for Old Phones / Samsung
+        val guideBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#151B15"))
+                cornerRadius = 6f
+                setStroke(1, Color.parseColor("#224422"))
+            }
+            background = bg
+            setPadding(14, 12, 14, 12)
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 14)
+            }
+            layoutParams = p
+        }
+        val guideLabel = TextView(this).apply {
+            text = "DEDICATED NODE OPTIMIZATION GUIDE:"
+            textSize = 9.5f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 4)
+        }
+        val guideContent = TextView(this).apply {
+            text = "1. Samsung RAM Plus: Set to 8 GB in Settings > Device Care > Memory > RAM Plus and reboot.\n2. Background Limit: In Developer Options, set limit to 'No background processes'.\n3. Airplane Mode + Wi-Fi: Shuts down 4G/5G modem and saves ~400MB RAM.\n4. CPU Fallback: If Adreno GPU OOMs, toggle [ GPU: OFF ] in Tab 1."
+            textSize = 8.5f
+            setTextColor(Color.parseColor("#AAAAAA"))
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(3f, 1f)
+        }
+        guideBox.addView(guideLabel)
+        guideBox.addView(guideContent)
+        container.addView(guideBox)
+
+        // 4. Double Check Action Description
+        val warningTv = TextView(this).apply {
+            text = "SWEEP ACTIONS (DOUBLE CHECK):\n• Terminate cached background apps via system call\n• Purge GPU shader/compilation cache files\n• Trigger JVM GC and memory finalization"
+            textSize = 8.5f
+            setTextColor(Color.parseColor("#FFBB33"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 14)
+        }
+        container.addView(warningTv)
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(scroll)
+            .create()
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val cancelBtn = Button(this).apply {
+            text = "[ CANCEL ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#333333"))
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = p
+            setOnClickListener { dialog.dismiss() }
+        }
+        btnRow.addView(cancelBtn)
+
+        val confirmSweepBtn = Button(this).apply {
+            text = "[ ⚠️ CONFIRM SWEEP ]"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#008833"))
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = p
+            setOnClickListener {
+                dialog.dismiss()
+                Toast.makeText(this@MainActivity, "Executing Deep RAM Sweep...", Toast.LENGTH_SHORT).show()
+                Thread {
+                    val res = ModelManager.performDeepRamSweep(this@MainActivity)
+                    val updatedMem = ModelManager.getSystemMemoryInfo(this@MainActivity)
+                    val rt = Runtime.getRuntime()
+                    val usedMem = (rt.totalMemory() - rt.freeMemory()) / 1024 / 1024
+                    val maxMem = rt.maxMemory() / 1024 / 1024
+
+                    runOnUiThread {
+                        memStatsTv.text = "Device RAM:  ${updatedMem.formatPhysicalRam()}\nApp JVM:     $usedMem MB used / $maxMem MB max\nOS Status:   ${if (updatedMem.isLowMemory) "⚠️ LOW MEMORY" else "● Healthy (OS Cached)"}"
+                        statusIsland.updateTelemetry()
+                        val msg = "Deep Sweep complete!\nApps swept: ${res.appsTargeted} | Net freed: ${res.netRamFreedMb} MB\nRAM available: ${updatedMem.availMemMb} MB (%.1f GB)".format(updatedMem.availMemGb)
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                    }
+                }.start()
+            }
+        }
+        btnRow.addView(confirmSweepBtn)
+        container.addView(btnRow)
+
+        dialog.show()
     }
 
     private fun setModelMockMode(isMock: Boolean) {

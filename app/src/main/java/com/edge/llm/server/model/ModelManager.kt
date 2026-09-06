@@ -2,6 +2,7 @@ package com.edge.llm.server.model
 
 import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import android.os.Environment
 import com.edge.llm.server.util.LogCategory
 import com.edge.llm.server.util.ServerConsole
@@ -37,6 +38,67 @@ data class PurgeResult(
     val filesDeleted: Int,
     val bytesFreed: Long
 )
+
+/**
+ * Hardware profile capturing CPU, GPU, SoC and architecture characteristics.
+ */
+data class HardwareProfile(
+    val manufacturer: String,
+    val model: String,
+    val deviceCodename: String,
+    val soc: String,
+    val cpuCores: Int,
+    val primaryAbi: String,
+    val isOpenClAvailable: Boolean,
+    val isLowRamDevice: Boolean,
+    val androidVersion: String
+) {
+    fun summaryLine(): String {
+        val openClTag = if (isOpenClAvailable) "OpenCL Available" else "No OpenCL"
+        return "SoC: $soc | CPU: $cpuCores Cores ($primaryAbi) | GPU: $openClTag"
+    }
+
+    fun fullDeviceLine(): String {
+        return "$manufacturer $model ($deviceCodename) - $androidVersion"
+    }
+}
+
+/**
+ * Feasibility classification levels for loading heavy LLMs.
+ */
+enum class FeasibilityLevel {
+    SAFE,
+    TIGHT,
+    CRITICAL_OOM_RISK
+}
+
+/**
+ * Audit outcome evaluating whether selected model fits in available memory.
+ */
+data class FeasibilityAudit(
+    val modelFileName: String,
+    val modelSizeBytes: Long,
+    val modelSizeMb: Long,
+    val estimatedPeakAllocationMb: Long,
+    val currentAvailRamMb: Long,
+    val totalRamMb: Long,
+    val level: FeasibilityLevel,
+    val recommendation: String
+)
+
+/**
+ * Result of aggressive memory sweep.
+ */
+data class DeepSweepResult(
+    val appsTargeted: Int,
+    val cacheFilesDeleted: Int,
+    val cacheBytesFreed: Long,
+    val jvmBytesFreed: Long,
+    val availRamBeforeMb: Long,
+    val availRamAfterMb: Long
+) {
+    val netRamFreedMb: Long get() = maxOf(0L, availRamAfterMb - availRamBeforeMb)
+}
 
 /**
  * ModelManager: A thread-safe global singleton that owns the model lifecycle at application level,
@@ -84,6 +146,140 @@ object ModelManager {
             totalMemBytes = memInfo.totalMem,
             thresholdBytes = memInfo.threshold,
             isLowMemory = memInfo.lowMemory
+        )
+    }
+
+    /**
+     * Resolves hardware specs useful for edge LLM inference (SoC, CPU cores, ABI, GPU OpenCL driver).
+     */
+    fun getHardwareProfile(context: Context): HardwareProfile {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val soc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val s = Build.SOC_MODEL
+                if (!s.isNullOrBlank() && s != Build.UNKNOWN) s else Build.HARDWARE
+            } catch (e: Throwable) {
+                Build.HARDWARE
+            }
+        } else {
+            Build.HARDWARE
+        }
+
+        val openClPaths = listOf(
+            "/vendor/lib64/libOpenCL.so",
+            "/system/vendor/lib64/libOpenCL.so",
+            "/system/lib64/libOpenCL.so",
+            "/vendor/lib/libOpenCL.so",
+            "/system/lib/libOpenCL.so"
+        )
+        val hasOpenCl = openClPaths.any { File(it).exists() }
+
+        return HardwareProfile(
+            manufacturer = Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
+            model = Build.MODEL,
+            deviceCodename = Build.DEVICE,
+            soc = soc,
+            cpuCores = Runtime.getRuntime().availableProcessors(),
+            primaryAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a",
+            isOpenClAvailable = hasOpenCl,
+            isLowRamDevice = am.isLowRamDevice,
+            androidVersion = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
+        )
+    }
+
+    /**
+     * Audits whether the selected model can safely fit into available RAM, factoring in
+     * weights, OpenCL shader compilation buffers, and KV-cache context allocations.
+     */
+    fun auditModelFeasibility(context: Context, modelFile: File?): FeasibilityAudit {
+        val mem = getSystemMemoryInfo(context)
+        if (modelFile == null || !modelFile.exists()) {
+            return FeasibilityAudit(
+                modelFileName = "No Model Selected",
+                modelSizeBytes = 0L,
+                modelSizeMb = 0L,
+                estimatedPeakAllocationMb = 0L,
+                currentAvailRamMb = mem.availMemMb,
+                totalRamMb = mem.totalMemMb,
+                level = FeasibilityLevel.SAFE,
+                recommendation = "Select a .litertlm model file to evaluate memory feasibility."
+            )
+        }
+
+        val sizeBytes = modelFile.length()
+        val sizeMb = sizeBytes / (1024 * 1024)
+        // Peak memory estimate: Weights + GPU compilation scratch (~1.2GB) + KV cache (~0.6GB)
+        val estimatedPeakMb = (sizeMb * 1.25).toLong() + 800L
+
+        val (level, rec) = when {
+            mem.availMemMb >= estimatedPeakMb + 400L -> {
+                FeasibilityLevel.SAFE to "Physical RAM is sufficient for standard GPU initialization."
+            }
+            mem.availMemMb >= sizeMb + 400L -> {
+                FeasibilityLevel.TIGHT to "RAM is tight. Enable Samsung RAM Plus (6-8GB) and limit background processes to prevent LMK crash."
+            }
+            else -> {
+                FeasibilityLevel.CRITICAL_OOM_RISK to "HIGH OOM RISK: Peak allocation (~${estimatedPeakMb}MB) exceeds available RAM (${mem.availMemMb}MB). Must run Deep Sweep, configure 8GB RAM Plus, or test in CPU mode ([ GPU: OFF ])."
+            }
+        }
+
+        return FeasibilityAudit(
+            modelFileName = modelFile.name,
+            modelSizeBytes = sizeBytes,
+            modelSizeMb = sizeMb,
+            estimatedPeakAllocationMb = estimatedPeakMb,
+            currentAvailRamMb = mem.availMemMb,
+            totalRamMb = mem.totalMemMb,
+            level = level,
+            recommendation = rec
+        )
+    }
+
+    /**
+     * Performs an aggressive memory sweep to maximize contiguous physical RAM before loading large LLMs:
+     * 1. Terminates cached 3rd-party background app processes.
+     * 2. Purges temporary compilation and cache files.
+     * 3. Executes JVM GC and object finalization.
+     */
+    fun performDeepRamSweep(context: Context): DeepSweepResult {
+        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Starting Deep RAM Sweep...")
+        val memBefore = getSystemMemoryInfo(context)
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        var appsTargeted = 0
+
+        try {
+            val pm = context.packageManager
+            val installedApps = pm.getInstalledApplications(0)
+            val myPkg = context.packageName
+            installedApps.forEach { appInfo ->
+                val pkg = appInfo.packageName
+                if (pkg != myPkg && !pkg.startsWith("android") && !pkg.startsWith("com.android.systemui")) {
+                    try {
+                        am.killBackgroundProcesses(pkg)
+                        appsTargeted++
+                    } catch (e: Exception) {
+                        // Ignore individual package failures
+                    }
+                }
+            }
+            ServerConsole.log(LogCategory.ENGINE, "ModelManager: Swept cached background processes for $appsTargeted packages.")
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.ENGINE, "ModelManager: Background sweep warning: ${e.message}")
+        }
+
+        val purgeRes = purgeCacheFiles(context)
+        val jvmFreed = trimMemoryAndCollectGarbage()
+        val memAfter = getSystemMemoryInfo(context)
+        val netFreed = maxOf(0L, memAfter.availMemMb - memBefore.availMemMb)
+        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Deep Sweep completed. Net RAM freed: $netFreed MB (Available: ${memAfter.availMemMb} MB).")
+
+        return DeepSweepResult(
+            appsTargeted = appsTargeted,
+            cacheFilesDeleted = purgeRes.filesDeleted,
+            cacheBytesFreed = purgeRes.bytesFreed,
+            jvmBytesFreed = jvmFreed,
+            availRamBeforeMb = memBefore.availMemMb,
+            availRamAfterMb = memAfter.availMemMb
         )
     }
 
