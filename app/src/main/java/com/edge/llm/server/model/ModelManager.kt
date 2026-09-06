@@ -20,8 +20,14 @@ data class MemoryReport(
 ) {
     val availMemMb: Long get() = availMemBytes / (1024 * 1024)
     val totalMemMb: Long get() = totalMemBytes / (1024 * 1024)
+    val availMemGb: Double get() = availMemBytes / (1024.0 * 1024.0 * 1024.0)
+    val totalMemGb: Double get() = totalMemBytes / (1024.0 * 1024.0 * 1024.0)
     val usedMemMb: Long get() = (totalMemBytes - availMemBytes) / (1024 * 1024)
     val percentUsed: Int get() = if (totalMemMb > 0) ((usedMemMb.toDouble() / totalMemMb.toDouble()) * 100).toInt() else 0
+
+    fun formatPhysicalRam(): String {
+        return "%.1f GB free / %.1f GB total (%d%% OS used)".format(availMemGb, totalMemGb, percentUsed)
+    }
 }
 
 /**
@@ -83,13 +89,19 @@ object ModelManager {
 
     /**
      * Trims JVM heap and requests the runtime to finalize non-referenced objects.
+     * Returns the approximate number of bytes reclaimed from the JVM heap.
      */
-    fun trimMemoryAndCollectGarbage() {
+    fun trimMemoryAndCollectGarbage(): Long {
         ServerConsole.log(LogCategory.ENGINE, "ModelManager: Running GC and memory finalization...")
+        val rt = Runtime.getRuntime()
+        val heapBefore = rt.totalMemory() - rt.freeMemory()
         System.gc()
-        Runtime.getRuntime().runFinalization()
+        rt.runFinalization()
         System.gc()
-        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Memory trim completed.")
+        val heapAfter = rt.totalMemory() - rt.freeMemory()
+        val freedBytes = maxOf(0L, heapBefore - heapAfter)
+        ServerConsole.log(LogCategory.ENGINE, "ModelManager: Memory trim completed. Reclaimed ${freedBytes / 1024} KB of JVM heap.")
+        return freedBytes
     }
 
     /**
@@ -108,7 +120,8 @@ object ModelManager {
      * Purges temporary cache files generated during inference or GPU compilation.
      * Cleans both the private app cache directory and cleans up any orphan cache files
      * left in public storage (/sdcard/Download/llm-server/models/ and /sdcard/Download/).
-     * Rigorously preserves all .litertlm model weight files.
+     * In the dedicated models directory, all non-.litertlm files (such as .bin, .tmp, .cache)
+     * are deleted unconditionally, while genuine .litertlm model weight files are strictly preserved.
      */
     fun purgeCacheFiles(context: Context? = null): PurgeResult {
         var count = 0
@@ -134,38 +147,55 @@ object ModelManager {
             }
         }
 
-        // 2. Scan public models directory and Downloads for orphan cache files (*_mldrift_*, *_weight_cache*, *_program_cache*, *.cache, temp_*)
-        val dirsToInspect = listOfNotNull(
-            getModelsDirectory(),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        )
+        // 2. Scan dedicated models directory (/sdcard/Download/llm-server/models/)
+        // In this dedicated directory, any file that is NOT a genuine .litertlm model (e.g. .bin, .tmp, .cache)
+        // is an unwanted runtime or cache artifact and MUST be purged.
+        try {
+            val modelsDir = getModelsDirectory()
+            if (modelsDir.exists() && modelsDir.isDirectory) {
+                modelsDir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (file.isFile && !name.endsWith(".litertlm", ignoreCase = true)) {
+                        val size = file.length()
+                        if (file.delete()) {
+                            count++
+                            bytesFreed += size
+                            ServerConsole.log(LogCategory.ENGINE, "Purged non-model artifact from models folder: $name (${size / 1024} KB)")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.ENGINE, "Warning scanning models directory: ${e.message}")
+        }
 
-        for (dir in dirsToInspect) {
-            if (dir.exists() && dir.isDirectory) {
-                try {
-                    dir.listFiles()?.forEach { file ->
-                        val name = file.name
-                        // Never touch genuine model weights
-                        if (!name.endsWith(".litertlm") && file.isFile) {
-                            val isCacheArtifact = name.contains("_mldrift_") ||
-                                    name.contains("_weight_cache") ||
-                                    name.contains("_program_cache") ||
-                                    name.endsWith(".cache") ||
-                                    name.startsWith("temp_")
-                            if (isCacheArtifact) {
-                                val size = file.length()
-                                if (file.delete()) {
-                                    count++
-                                    bytesFreed += size
-                                    ServerConsole.log(LogCategory.ENGINE, "Purged orphan cache artifact: $name (${size / 1024} KB)")
-                                }
+        // 3. Scan broader Downloads folder (/sdcard/Download/)
+        // Conservative rule: only purge files that explicitly match known cache or temporary patterns
+        try {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (downloadsDir.exists() && downloadsDir.isDirectory) {
+                downloadsDir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (file.isFile && !name.endsWith(".litertlm", ignoreCase = true)) {
+                        val isCacheArtifact = name.contains("_mldrift_") ||
+                                name.contains("_weight_cache") ||
+                                name.contains("_program_cache") ||
+                                name.endsWith(".cache", ignoreCase = true) ||
+                                name.startsWith("temp_") ||
+                                (name.endsWith(".bin", ignoreCase = true) && (name.contains("cache") || name.contains("weight") || name.contains("mldrift")))
+                        if (isCacheArtifact) {
+                            val size = file.length()
+                            if (file.delete()) {
+                                count++
+                                bytesFreed += size
+                                ServerConsole.log(LogCategory.ENGINE, "Purged orphan cache artifact from Downloads: $name (${size / 1024} KB)")
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    ServerConsole.log(LogCategory.ENGINE, "Warning scanning directory ${dir.name}: ${e.message}")
                 }
             }
+        } catch (e: Exception) {
+            ServerConsole.log(LogCategory.ENGINE, "Warning scanning Downloads directory: ${e.message}")
         }
 
         val mbFreed = bytesFreed / (1024.0 * 1024.0)

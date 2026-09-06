@@ -34,6 +34,7 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import org.json.JSONObject
 
 /**
  * MainActivity: The primary control dashboard panel of our edge LLM server node.
@@ -101,6 +102,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var quickShellSendBtn: Button
     private lateinit var quickShellStreamBtn: Button
     private var isQuickStreamEnabled = true
+    private lateinit var quickShellResponseCard: LinearLayout
+    private lateinit var quickShellStatusTv: TextView
+    private lateinit var quickShellResponseTv: TextView
 
     private lateinit var presetS1Btn: Button
     private lateinit var presetStreamBtn: Button
@@ -374,8 +378,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val memReport = ModelManager.getSystemMemoryInfo(this)
+        val rt = Runtime.getRuntime()
+        val heapUsedMb = (rt.totalMemory() - rt.freeMemory()) / 1024 / 1024
+        val heapMaxMb = rt.maxMemory() / 1024 / 1024
+
         val ramTitle = TextView(this).apply {
-            text = "[ RAM HEALTH CHECK ]"
+            text = "[ SYSTEM & PROCESS MEMORY ]"
             textSize = 11f
             setTextColor(Color.parseColor("#00FF66"))
             typeface = Typeface.MONOSPACE
@@ -383,26 +391,39 @@ class MainActivity : AppCompatActivity() {
         card.addView(ramTitle)
 
         val ramDetails = TextView(this).apply {
-            text = "Physical RAM: ${memReport.availMemMb} MB free / ${memReport.totalMemMb} MB total (${memReport.percentUsed}% used)"
+            text = "Device RAM:  ${memReport.formatPhysicalRam()}\nApp JVM:     $heapUsedMb MB used / $heapMaxMb MB max\nOS Status:   ${if (memReport.isLowMemory) "⚠️ LOW MEMORY" else "● Healthy (Normal OS Caches)"}"
             textSize = 10f
-            setTextColor(if (memReport.availMemMb < 1500) Color.parseColor("#FFBB33") else Color.parseColor("#888888"))
+            setTextColor(if (memReport.isLowMemory) Color.parseColor("#FF4444") else Color.parseColor("#CCCCCC"))
             typeface = Typeface.MONOSPACE
-            setPadding(0, 4, 0, 8)
+            setPadding(0, 6, 0, 6)
         }
         card.addView(ramDetails)
 
+        val ramNote = TextView(this).apply {
+            text = "ℹ Note: Android kernel retains ~85-90% RAM for OS buffers and background caching. Unused RAM is dynamically freed when loading models."
+            textSize = 8.5f
+            setTextColor(Color.parseColor("#777777"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 10)
+        }
+        card.addView(ramNote)
+
         val trimBtn = Button(this).apply {
-            text = "[ 🧹 TRIM SYSTEM MEMORY & GC ]"
+            text = "[ 🧹 TRIM APP HEAP & GC ]"
             textSize = 9f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#333333"))
             setOnClickListener {
-                ModelManager.trimMemoryAndCollectGarbage()
+                val freedBytes = ModelManager.trimMemoryAndCollectGarbage()
                 val updated = ModelManager.getSystemMemoryInfo(this@MainActivity)
-                ramDetails.text = "Physical RAM: ${updated.availMemMb} MB free / ${updated.totalMemMb} MB total (${updated.percentUsed}% used)"
-                ramDetails.setTextColor(if (updated.availMemMb < 1500) Color.parseColor("#FFBB33") else Color.parseColor("#888888"))
-                Toast.makeText(this@MainActivity, "Memory trimmed: ${updated.availMemMb} MB free", Toast.LENGTH_SHORT).show()
+                val rt2 = Runtime.getRuntime()
+                val newHeapMb = (rt2.totalMemory() - rt2.freeMemory()) / 1024 / 1024
+                val freedKb = freedBytes / 1024
+                val freedText = if (freedKb >= 1024) "%.1f MB".format(freedKb / 1024.0) else "$freedKb KB"
+
+                ramDetails.text = "Device RAM:  ${updated.formatPhysicalRam()}\nApp JVM:     $newHeapMb MB used / $heapMaxMb MB max\nOS Status:   ${if (updated.isLowMemory) "⚠️ LOW MEMORY" else "● Healthy (Normal OS Caches)"}"
+                Toast.makeText(this@MainActivity, "App heap trimmed: $freedText reclaimed", Toast.LENGTH_SHORT).show()
             }
         }
         card.addView(trimBtn)
@@ -990,13 +1011,22 @@ class MainActivity : AppCompatActivity() {
             val runtime = Runtime.getRuntime()
             val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
             val maxMem = runtime.maxMemory() / 1024 / 1024
-            text = "Device RAM: ${report.availMemMb} MB free / ${report.totalMemMb} MB total (${report.percentUsed}% used)\nJVM Heap:   $usedMem MB / $maxMem MB max"
+            text = "Device RAM:  ${report.formatPhysicalRam()}\nApp JVM:     $usedMem MB used / $maxMem MB max\nOS Status:   ${if (report.isLowMemory) "⚠️ LOW MEMORY" else "● Healthy (OS Cached)"}"
             textSize = 10f
-            setTextColor(Color.parseColor("#888888"))
+            setTextColor(Color.parseColor("#CCCCCC"))
             typeface = Typeface.MONOSPACE
-            setPadding(0, 0, 0, 12)
+            setPadding(0, 0, 0, 6)
         }
         memoryCard.addView(memStatsTv)
+
+        val memNoteTv = TextView(this).apply {
+            text = "ℹ Android retains ~85-90% RAM for OS buffers/caching. Memory is dynamically freed upon model allocation."
+            textSize = 8.5f
+            setTextColor(Color.parseColor("#777777"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 10)
+        }
+        memoryCard.addView(memNoteTv)
 
         val memBtnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1013,13 +1043,16 @@ class MainActivity : AppCompatActivity() {
             }
             layoutParams = params
             setOnClickListener {
-                ModelManager.trimMemoryAndCollectGarbage()
+                val freedBytes = ModelManager.trimMemoryAndCollectGarbage()
                 val updated = ModelManager.getSystemMemoryInfo(this@MainActivity)
                 val runtime = Runtime.getRuntime()
                 val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
                 val maxMem = runtime.maxMemory() / 1024 / 1024
-                memStatsTv.text = "Device RAM: ${updated.availMemMb} MB free / ${updated.totalMemMb} MB total (${updated.percentUsed}% used)\nJVM Heap:   $usedMem MB / $maxMem MB max"
-                Toast.makeText(this@MainActivity, "RAM trimmed: ${updated.availMemMb} MB free", Toast.LENGTH_SHORT).show()
+                val freedKb = freedBytes / 1024
+                val freedText = if (freedKb >= 1024) "%.1f MB".format(freedKb / 1024.0) else "$freedKb KB"
+
+                memStatsTv.text = "Device RAM:  ${updated.formatPhysicalRam()}\nApp JVM:     $usedMem MB used / $maxMem MB max\nOS Status:   ${if (updated.isLowMemory) "⚠️ LOW MEMORY" else "● Healthy (OS Cached)"}"
+                Toast.makeText(this@MainActivity, "App heap trimmed: $freedText reclaimed", Toast.LENGTH_SHORT).show()
             }
         }
         memBtnRow.addView(trimBtn)
@@ -1549,6 +1582,68 @@ class MainActivity : AppCompatActivity() {
         shellControlRow.addView(quickShellSendBtn)
         shellCard.addView(shellControlRow)
 
+        // Dedicated live terminal output card for interactive shell
+        quickShellResponseCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#0C1A10"))
+                cornerRadius = 4f
+                setStroke(1, Color.parseColor("#006622"))
+            }
+            background = bg
+            setPadding(12, 10, 12, 10)
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 10, 0, 0)
+            }
+            layoutParams = params
+        }
+
+        val responseHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 6)
+        }
+
+        quickShellStatusTv = TextView(this).apply {
+            text = "[ ASSISTANT ]"
+            textSize = 9f
+            setTextColor(Color.parseColor("#00AA44"))
+            typeface = Typeface.MONOSPACE
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            layoutParams = p
+        }
+        responseHeaderRow.addView(quickShellStatusTv)
+
+        val copyResponseBtn = Button(this).apply {
+            text = "[ COPY ]"
+            textSize = 8.5f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            typeface = Typeface.MONOSPACE
+            setPadding(8, 2, 8, 2)
+            setOnClickListener {
+                val textToCopy = quickShellResponseTv.text.toString()
+                if (textToCopy.isNotEmpty()) {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Assistant Response", textToCopy))
+                    Toast.makeText(this@MainActivity, "Response copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        responseHeaderRow.addView(copyResponseBtn)
+        quickShellResponseCard.addView(responseHeaderRow)
+
+        quickShellResponseTv = TextView(this).apply {
+            text = ""
+            textSize = 12f
+            setTextColor(Color.parseColor("#00FF66"))
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        quickShellResponseCard.addView(quickShellResponseTv)
+        shellCard.addView(quickShellResponseCard)
+
         testContainer.addView(shellCard)
 
         // --- SECTION 2: ONE-CLICK TEST PRESETS ---
@@ -1948,6 +2043,43 @@ class MainActivity : AppCompatActivity() {
             .replace("\t", "\\t")
     }
 
+    private fun extractContentFromChunk(chunk: String): String? {
+        val trimmed = chunk.trim()
+        if (trimmed.isEmpty() || trimmed == "data: [DONE]" || trimmed == "[DONE]") return null
+        val jsonStr = if (trimmed.startsWith("data:")) trimmed.substring(5).trim() else trimmed
+        return try {
+            val json = JSONObject(jsonStr)
+            if (json.has("choices")) {
+                val choices = json.optJSONArray("choices")
+                if (choices != null && choices.length() > 0) {
+                    val first = choices.optJSONObject(0)
+                    if (first != null) {
+                        val delta = first.optJSONObject("delta")
+                        if (delta != null && delta.has("content")) {
+                            delta.optString("content", "")
+                        } else {
+                            val msg = first.optJSONObject("message")
+                            if (msg != null && msg.has("content")) {
+                                msg.optString("content", "")
+                            } else if (first.has("text")) {
+                                first.optString("text", "")
+                            } else null
+                        }
+                    } else null
+                } else null
+            } else if (json.has("message")) {
+                val msg = json.optJSONObject("message")
+                if (msg != null && msg.has("content")) {
+                    msg.optString("content", "")
+                } else null
+            } else if (json.has("response")) {
+                json.optString("response", "")
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun executeQuickPrompt() {
         val prompt = quickShellInput.text.toString().trim()
         if (prompt.isEmpty()) {
@@ -1972,7 +2104,8 @@ class MainActivity : AppCompatActivity() {
             body = jsonBody,
             isStream = isQuickStreamEnabled,
             triggerButton = quickShellSendBtn,
-            buttonDefaultText = "[ > SEND ]"
+            buttonDefaultText = "[ > SEND ]",
+            isQuickShell = true
         )
     }
 
@@ -2148,7 +2281,8 @@ class MainActivity : AppCompatActivity() {
         body: String?,
         isStream: Boolean,
         triggerButton: Button? = null,
-        buttonDefaultText: String = ""
+        buttonDefaultText: String = "",
+        isQuickShell: Boolean = false
     ) {
         if (!LlmServerService.isServiceRunning) {
             ServerConsole.log(LogCategory.UI, "Test Suite: Blocked. HTTP server is offline.")
@@ -2165,6 +2299,12 @@ class MainActivity : AppCompatActivity() {
         statusMetric.setTextColor(Color.WHITE)
         sizeMetric.text = "---"
 
+        if (isQuickShell) {
+            quickShellResponseCard.visibility = View.VISIBLE
+            quickShellStatusTv.text = "[ ASSISTANT | Generating... ]"
+            quickShellResponseTv.text = ""
+        }
+
         isTestingApi = true
         activeTestButton = triggerButton
         defaultTestButtonText = buttonDefaultText
@@ -2176,6 +2316,8 @@ class MainActivity : AppCompatActivity() {
             val start = System.currentTimeMillis()
             var code = -1
             val responseSb = StringBuilder()
+            val assistantSb = StringBuilder()
+            var tokenCount = 0
             var success = false
 
             try {
@@ -2202,6 +2344,16 @@ class MainActivity : AppCompatActivity() {
                     var line = reader.readLine()
                     while (line != null) {
                         responseSb.append(line).append("\n")
+                        val token = extractContentFromChunk(line)
+                        if (token != null && token.isNotEmpty()) {
+                            assistantSb.append(token)
+                            tokenCount++
+                            if (isQuickShell) {
+                                runOnUiThread {
+                                    quickShellResponseTv.append(token)
+                                }
+                            }
+                        }
                         val currentLine = line
                         runOnUiThread {
                             testConsole.append(currentLine + "\n")
@@ -2209,9 +2361,15 @@ class MainActivity : AppCompatActivity() {
                         }
                         line = reader.readLine()
                     }
-                } else {
-                    val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
+                } else if (stream != null) {
+                    val text = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
                     responseSb.append(text)
+                    if (success) {
+                        val token = extractContentFromChunk(text)
+                        if (token != null && token.isNotEmpty()) {
+                            assistantSb.append(token)
+                        }
+                    }
                     runOnUiThread {
                         testConsole.append(text)
                     }
@@ -2247,6 +2405,34 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
                 sizeMetric.text = "${finalResp.length} B"
+
+                if (isQuickShell) {
+                    if (success) {
+                        val stats = if (tokenCount > 0) "$tokenCount tokens in ${diff}ms" else "completed in ${diff}ms"
+                        quickShellStatusTv.text = "[ ASSISTANT | $stats ]"
+                        if (assistantSb.isNotEmpty()) {
+                            quickShellResponseTv.text = assistantSb.toString().trim()
+                        }
+                    } else {
+                        quickShellStatusTv.text = "[ ASSISTANT ERROR | HTTP $code ]"
+                        quickShellResponseTv.text = finalResp
+                    }
+                }
+
+                // If assistant output was extracted, feature it cleanly at the top of the testConsole
+                if (assistantSb.isNotEmpty()) {
+                    val formattedConsole = buildString {
+                        append(">>> HTTP REQUEST:\n")
+                        append(requestString)
+                        append("\n\n------------------------------------------------------------\n")
+                        append("<<< ASSISTANT OUTPUT:\n")
+                        append(assistantSb.toString().trim())
+                        append("\n\n------------------------------------------------------------\n")
+                        append("<<< RAW PROTOCOL TRACE ($code):\n")
+                        append(finalResp)
+                    }
+                    testConsole.setText(formattedConsole)
+                }
             }
         }.start()
     }

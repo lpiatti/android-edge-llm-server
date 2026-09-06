@@ -18,19 +18,19 @@ dispositivo fisico Android; inferenza LiteRT-LM reattiva via API compatibili Ope
 Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 e stabilizzazione motore su branch `feature/request-queue`:
 1. **RequestQueue FIFO Serializzata**: Gestore single-worker della concorrenza (capacità 4 slot, timeout 120s) con esclusione mutua su `generate()` e `generateStream()`, e ritorno di HTTP 429 (`rate_limit_exceeded` / `Retry-After: 30`) sia su overflow che su timeout per OpenAI (`/v1/chat/completions`) e Ollama (`/api/chat`).
 2. **Suite di Test Unitari**: `RequestQueueTest` con 5 casi di test JUnit 4 passati con successo.
-3. **Stabilizzazione LiteRT-LM 0.16.1 & Coroutines 1.11.0**: Risolto il crash fatale `NoSuchMethodError: SendChannel.close$default` su `sendMessageAsync.onDone()` allineando esplicitamente `kotlinx-coroutines-core:1.11.0` e `kotlinx-coroutines-android:1.11.0` in `app/build.gradle.kts`. Mantenuto il supporto a `SamplerConfig(temperature, topP)` e Gemma 4.
-4. **Governance Cache Privata & Pulizia Deterministica**: Configurato `cacheDir` verso directory privata interna (`context.cacheDir/litertlm_cache`), con creazione automatica della cartella; implementato `purgeCacheFiles()` eseguito automaticamente all'avvio (`onCreate`), alla chiusura dell'applicazione (`onDestroy` di Activity e Daemon Service) e allo scaricamento del modello (`unloadActiveModel`), con bonifica automatica della directory modelli pubblica da residui `*_mldrift_*`, preservando integralmente i file `.litertlm`.
-5. **Diagnostica RAM Fisica & Azione Trim Memory**: Monitoraggio della RAM reale di sistema (`ActivityManager.MemoryInfo`) integrato in `StatusIsland`, nelle schermate di avvio (Crash Recovery / Permission Gate) e in un pannello dedicato `> MEMORY & CACHE MANAGEMENT` in Tab 1, con pulsante `[ 🧹 TRIM SYSTEM RAM & GC ]` e `[ 🗑️ PURGE CACHE ]`.
-6. **Interactive Tester & Direct Shell**: Tab 3 con Quick Shell Prompt (`> [ Frase... ]`), preset one-click (S1 Recall, Stream SSE live, S2 Queue Stress 5x, Health check) ed estetica terminale TUI coerente.
+3. **Stabilizzazione LiteRT-LM 0.16.1 & Coroutines 1.11.0**: Risolto il crash fatale `NoSuchMethodError: SendChannel.close$default` su `sendMessageAsync.onDone()` allineando esplicitamente `kotlinx-coroutines-core:1.11.0` e `kotlinx-coroutines-android:1.11.0` in `app/build.gradle.kts`. Inferenza funzionante con successo su Google Pixel 9 (8 token generati: "Ciao! Come posso aiutarti oggi?").
+4. **Parsing Stream SSE & Quick Shell Response Card**: Risolto l'output dei chunk SSE grezzi (`data: {"choices":[{"delta":...}]}`). Implementato `extractContentFromChunk` e creata la `quickShellResponseCard` con streaming testo in tempo reale, conteggio token/latenza, pulsante `[ COPY ]` e formattazione evidenziata `<<< ASSISTANT OUTPUT:` nella console test.
+5. **Bonifica Totale Cartella Modelli**: Estesa la scansione in `ModelManager.purgeCacheFiles()` affinché ogni file non `.litertlm` (inclusi residui `.bin`, `.tmp`, `.cache` lasciati da vecchie esecuzioni) presente in `/sdcard/Download/llm-server/models/` venga rimosso incondizionatamente sia all'avvio che alla chiusura.
+6. **Telemetria RAM Chiara & Trasparenza GC**: Riformattata la visualizzazione della RAM fisica in GB con indicazione della cache Linux del sistema operativo (`%.1f GB free / %.1f GB total (%d%% OS cached)`), affiancata all'Heap del processo JVM (`$usedMem MB / $maxMem MB`). Azione Trim aggiornata per quantificare con precisione i kilobyte/megabyte recuperati dal garbage collector, con nota esplicativa sul rilascio dinamico della memoria da parte del kernel Linux.
 
 ## Prossimo passo
 
-- Attendere l'esito della pipeline GitHub Actions CI sulla PR #8 (`testDebugUnitTest` e `assembleDebug`).
-- Scaricare l'APK debug compilato ed eseguire il collaudo su Google Pixel 9:
-  - Invio di "ciao" tramite la Quick Prompt Shell per verificare l'assenza del crash `NoSuchMethodError`.
-  - Verifica della pulizia della cartella modelli `/sdcard/Download/llm-server/models/` da residui di cache.
-  - Verifica del monitor RAM e del comando `[ 🧹 TRIM RAM & GC ]` nelle schermate di avvio e nel Tab 1.
-  - Test preset di coda `[ S2 QUEUE ]` (HTTP 429) e streaming SSE live.
+- Eseguire commit e push su branch `feature/request-queue` (PR #8).
+- Verificare il passaggio dei test e la compilazione dell'APK debug su GitHub Actions CI (`android-ci.yml`).
+- Collaudo su Google Pixel 9:
+  - Invio di "ciao" da Quick Shell con verifica del testo in chiaro renderizzato live nell'output box.
+  - Verifica della scomparsa dei file `.bin` residui dalla cartella `/sdcard/Download/llm-server/models/`.
+  - Verifica delle metriche RAM espresse in GB e del feedback numerico sul trim GC.
 
 ## Decisioni e vincoli attivi
 
