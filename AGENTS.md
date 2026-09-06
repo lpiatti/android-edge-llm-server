@@ -1,198 +1,98 @@
-# AGENTS.md
+# AGENTS.md — android-edge-llm-server
+Metodo: Agorà v3.3 — 2026-09-02
 
-## Purpose
+Il metodo comune è in `../AGENTS.md`. Questo file conserva soltanto obiettivo,
+confini, sicurezza e regole specifiche del progetto.
 
-This file is the general operating contract for coding agents working on Android Edge LLM Server.
+- **Stato:** [`STATE.md`](STATE.md)
+- **Decisioni:** [`DECISIONI.md`](DECISIONI.md)
+- **Versionamento:** [`../_agora/versionamento.md`](../_agora/versionamento.md)
 
-It applies to all agents unless a more specific instruction file overrides it for a given tool.
+Se il metodo padre non è disponibile, lavora e crea checkpoint soltanto in
+questo repository; vietate operazioni cross-progetto.
 
-> [!IMPORTANT]
-> **Environment Constraint**: The local runner host does NOT have a Java, Gradle, or Android SDK development environment installed.
-> Do NOT execute or try to run local gradle commands (e.g., `./gradlew assembleDebug` or `./gradlew test`).
-> All code compilation, testing, and APK validation are performed exclusively via **GitHub Actions CI/CD** on pull requests and pushes to feature branches.
+## Cos'è
 
-## Mandatory Startup Protocol
+Server edge Android-native per inferenza locale con modelli linguistici
+(LiteRT-LM Gemma 4) esposti via API HTTP compatibili OpenAI e Ollama,
+implementato come demone background resiliente 24/7 (FGS, Wakelock, WifiLock) con
+UI di controllo e diagnostica in puro Kotlin programmatico.
 
-At the beginning of every new agent session on this repository, before proposing plans or changing files, the agent must read the real repository contents listed below and then present a short startup status block.
+**Criterio di riuscita:** Il server Ktor CIO esegue in background su dispositivo
+fisico Android o emulatore, risponde correttamente alle richieste API OpenAI
+(`/v1/chat/completions`) e Ollama (`/api/chat`) senza interruzioni per sleep o
+Doze mode, preservando la completa separazione tra UI e motore di inferenza.
+**Verifica rapida:** Nessuna locale. L'ambiente host Windows è privo di Java JDK,
+Gradle e Android SDK. Compilazione, test e packaging APK avvengono esclusivamente
+tramite GitHub Actions CI (`.github/workflows/android-ci.yml`) su feature branch / PR.
 
-Required reading order:
+## Confini
 
-1. README.md
-2. docs/project-state.md
-3. docs/roadmap.md
-4. docs/architecture.md
-5. docs/index.md
-6. AGENTS.md
-7. .agents/README.md
-8. the task-specific file under .agents/, when one is provided
-9. CLAUDE.md or CODEX.md (which are simple redirects to this file)
+- Il repository governa il codice Android (`app/`), la configurazione Gradle, la
+  documentazione architetturale (`docs/`), i piani operativi (`fable5/`), le
+  istruzioni agenti (`.agents/`, `CLAUDE.md`, `CODEX.md`) e le pipeline CI (`.github/`).
+- Nessun accesso o dipendenza da altri progetti della workspace; operatività e
+  checkpoint rimangono rigorosamente all'interno di questo repository.
+- Non modificare il codice sorgente Android o i file Gradle se non specificamente
+  richiesto dal task.
+- **Perimetro operativo sessioni:** Lavorare esclusivamente sulla sessione assegnata
+  definita in [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md). Qualsiasi altra
+  modifica richiede l'approvazione del proprietario del progetto. Non avviare voci
+  del backlog ([`fable5/backlog.md`](fable5/backlog.md)) in modo opportunistico.
+- **Riferimenti documentali obbligatori:** Prima di proporre modifiche o piani,
+  consultare in ordine: `README.md`, `docs/project-state.md`, `docs/roadmap.md`,
+  `docs/architecture.md`, `docs/index.md`, [`fable5/index.md`](fable5/index.md),
+  [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md) e `.agents/README.md`.
 
-The startup status block must contain:
+## Regole specifiche
 
-```text
-Repository context:
-- Branch/worktree checked:
-- Files actually read:
-- Current project phase:
-- Current objective:
-- Relevant constraints: (Include local host environment constraints here!)
-- Intended task:
-- Proposed branch:
-- First validation command: GitHub Actions CI (no local Gradle available)
-```
+### Vincolo critico di ambiente e verifica CI/CD
+- **Nessun build locale**: divieto assoluto di eseguire `./gradlew assembleDebug`,
+  `./gradlew test` o comandi locali Java/Gradle.
+- **Validazione esclusivamente remota via GitHub Actions**: per validare il codice
+  o generare l'APK, le modifiche vanno committate su feature branch, spinte al
+  remoto `origin` e validate tramite Pull Request verso `main`.
+- **Interazione guidata**: l'agente che modifica codice o configurazioni di build
+  deve fornire a Luigi istruzioni chiare passo-passo per aprire la PR su GitHub
+  e attendere il riscontro dell'esito della CI (compilazione APK o log errori)
+  prima di considerare completato il passaggio.
 
+### Integrità dei file verificati dalla CI
+- Il workflow `.github/workflows/android-ci.yml` (step `Verify Mandatory Bootstrap & Rules Files`)
+  verifica tassativamente la presenza dei seguenti file:
+  - `README.md`
+  - `docs/index.md`
+  - `docs/project-state.md`
+  - `docs/roadmap.md`
+  - `docs/architecture.md`
+  - `AGENTS.md`
+  - `.agents/README.md`
+  - `.agents/bootstrap-phase-0.md`
+  - `.agents/create-android-skeleton.md`
+  - `CLAUDE.md`
+  - `.claude/README.md`
+  Nessuno di questi file deve essere rimosso o rinominato senza coordinamento.
 
-Rules:
+### Guardrail architetturali e di design (ADR 1–14)
+- **Disaccoppiamento UI e Runtime Engine**: `MainActivity` e `LlmServerService`
+  sono modulari e indipendenti. La chiusura o lo swipe via della UI non deve
+  arrestare il server né rilasciare CPU/Wi-Fi lock.
+- **Resilienza Daemon (Foreground Service)**: il servizio HTTP opera come
+  Foreground Service (`specialUse` su API 34), con `PowerManager.PARTIAL_WAKE_LOCK`,
+  `WifiManager.WifiLock` ad alte prestazioni e riavvio automatico (`START_STICKY`, `BootReceiver`).
+- **Zero XML / Zero Compose**: interfaccia Android interamente programmatica in
+  puro Kotlin (`MainActivity.kt`) per garantire bundle APK microscopic (< 2.5 MB)
+  ed evitare problemi di compatibilità dei compilatori.
+- **Provider di inferenza**: LiteRT-LM confermato provider primario (`.litertlm`
+  Gemma 4). Escluso GGUF/llama.cpp.
+- **Coda richieste (RequestQueue)**: serializzazione FIFO delle richieste di
+  inferenza su singolo worker con HTTP 429 su overflow (sostituisce SessionManager).
+- **Direzione operativa sessioni**: seguire le 8 sessioni definite in
+  [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md) e il contratto API in
+  [`fable5/architettura-api.md`](fable5/architettura-api.md).
 
-- Do not make file changes before presenting the startup status block.
-- Do not infer missing file contents from memory or conventions.
-- If a required file is missing, report it explicitly and stop unless the task is to create it.
-- If repository content conflicts with chat history, use repository content.
-
-## Source of Truth
-
-Repository files are authoritative in this order:
-
-1. README.md
-2. docs/project-state.md
-3. docs/roadmap.md
-4. docs/architecture.md
-5. docs/index.md
-6. AGENTS.md
-7. Files under .agents/
-8. Redirect entrypoints (CLAUDE.md or CODEX.md)
-
-If repository content conflicts with chat history, use repository content.
-If a required file is missing, report it instead of inferring its contents.
-
-## Project Goal
-
-Build an Android-native edge AI server capable of exposing local LLM inference through OpenAI-compatible APIs.
-
-The project should evolve toward a lightweight Android-native server runtime, not a chat-centric Android application.
-
-## Operating Rules
-
-1. Prefer the smallest useful change.
-2. Avoid large refactors unless explicitly requested.
-3. Keep UI and inference runtime decoupled.
-4. Do not introduce runtime integration before the relevant roadmap phase.
-5. Preserve reproducible builds.
-6. Update persistent documentation when project state changes.
-7. Do not hide important decisions only in chat or terminal output.
-8. Stop and report blockers instead of inventing missing assumptions.
-9. Present the mandatory startup status block before editing files.
-
-## Branch and PR Rules
-
-Agents must not commit directly to main unless explicitly instructed.
-
-Default workflow (Guided PR & CI/CD Validation):
-
-1. **Create a feature branch** from main.
-2. **Make the smallest useful change** in the local workspace.
-3. **Commit changes** locally with a descriptive message.
-4. **Push the branch** to the remote origin.
-5. **Halt and Guide the User**: Since local builds are unavailable and GitHub CI runs only on pull requests, the agent MUST stop at this point. The agent MUST provide clear, step-by-step instructions to the user on how to open a Pull Request against `main` on GitHub to trigger the compilation.
-6. **Wait for CI Feedback**: The agent must ask the user to report the outcome of the GitHub Actions build (successful APK generation or compilation errors) before suggesting a merge or proceeding to further steps.
-
-For implementation tasks, the task brief should define the branch name.
-If no branch name is defined, stop and ask for one.
-
-Direct commits to main are acceptable only for explicit repository-bootstrap maintenance performed by the project orchestrator.
-
-## Change Discipline
-
-Before making changes, agents should identify:
-
-- current roadmap phase
-- files expected to change
-- reason for each change
-- risks or unknowns
-
-During implementation, agents MUST follow these strict guidelines:
-
-* **Incremental Delta Principle**: Before writing implementation plans or editing files, the agent MUST inspect the actual current filesystem and branch files. When expanding a branch or adding secondary features on top of a previous step, treat all existing configurations, dependencies, and code files as already active. Propose plans and edits only as an incremental delta, strictly avoiding plans to recreate or re-add already active setups.
-* **Documentation Sync**: At the end of every successful iteration or milestone completion, the agent MUST update `docs/project-state.md` and `docs/roadmap.md` to keep the repository's status 100% accurate.
-
-After making changes, agents should report:
-
-- files changed
-- build/test commands executed
-- results
-- open issues
-- suggested next step
-
-## Current Phase Guardrail
-
-The current repository state is **Phase 5 (Server Stabilization)** transitioning to **Phase 6 (Edge Extensions & Compatibility)**, since Phase 0 through Phase 4 are fully COMPLETED.
-
-During the current phase, agents may work on:
-- Optimizing background Foreground Service (FGS) persistence, Wakelocks, and WiFiLocks.
-- Fine-tuning memory consumption (LMK prevention) and component lifecycle safety.
-- Designing and implementing Local Text-to-Speech (TTS), Local Embeddings (ONNX/LiteRT), and matching OpenAI response JSON schemas.
-- Building the Curated Model Hub list/downloader and TinySD image generation.
-- Enhancing raw HTTP diagnostic log console dumps.
-
-During the current phase, agents must not work on:
-- Native GGUF/llama.cpp support (officially excluded as KO).
-- Hardcoding external download links or credentials in the application codebase.
-- Breaking decoupled boundaries between MainActivity and LlmServerService.
-
-## Architectural Guardrails
-
-Any implementation proposal must be checked against:
-
-| Constraint | Required Check |
-|---|---|
-| Incrementality | Is this the smallest useful step? |
-| Modularity | Does it respect current module boundaries? |
-| Low UI/runtime coupling | Does inference remain independent from UI? |
-| Upstream alignment | Does it avoid unjustified divergence from upstream runtimes? |
-| Build reproducibility | Can the result be built in a repeatable way? |
-| Persistent documentation | Does project-state or roadmap need an update? |
-| Roadmap coherence | Is the change aligned with docs/roadmap.md? |
-
-## Commit and PR Expectations
-
-Prefer small commits with clear messages.
-
-Suggested message style:
-
-- Add documentation index
-- Add initial architecture document
-- Add agent operating contract
-- Add Android CI skeleton
-- Update project state after bootstrap step
-
-PRs should include:
-
-- summary
-- changed files
-- validation performed
-- known limitations
-- next recommended step
-
-## Report Format
-
-At the end of a task, use this format:
-
-```text
-Task result: OK or KO
-
-Summary:
-- ...
-
-Files changed:
-- ...
-
-Validation:
-- GitHub CI Run: [Link or status of the action run]
-- Result: ...
-
-Open issues:
-- ...
-
-Next recommended step:
-- ...
-```
+### Disciplina delle modifiche
+- Prima di intervenire sul codice, verificare lo stato effettivo del branch e del filesystem.
+- Proporre modifiche incrementali minime e mirate.
+- Al termine di un task, riportare: esito (OK/KO), sintesi modifiche, file toccati,
+  istruzioni PR/CI e prossimo passo raccomandato.

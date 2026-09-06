@@ -95,33 +95,27 @@ Deliverables:
 
 ---
 
-## Phase 5 — Server Stabilization
+## Phase 5 — Server Stabilization & API Semantics
 
 Status: IN PROGRESS
 
-Goals:
-- background execution stability
-- Android lifecycle robustness
-- foreground service management
-- memory management
-
-Deliverables:
-- stable server mode
-- long-running inference sessions
-- improved runtime resilience
+Operational plan: [`fable5/roadmap-sessioni.md`](../fable5/roadmap-sessioni.md) (Sessions S1–S8)
+- S1: Correct API semantics (full `messages` array context + sampling parameters)
+- S2: RequestQueue (single-worker FIFO serialization, HTTP 429 rejection)
+- S3: Safe model loading (RAM pre-flight, crash marker, explicit errors)
+- S4: Ollama API complete & optional API key authentication
+- S5: Tool calling foundation (request parser, prompt template, tool_calls output)
+- S6: Tool calling streaming & agent harness validation
+- S7: Static Web UI served by Ktor (browser control surface)
+- S8: Consolidation release (bugfixes, doc sync, tagged APK release)
 
 ---
 
-## Phase 6 — Edge Extensions & Compatibility
+## Phase 6 — Edge Extensions & Backlog
 
 Status: PLANNED
 
-Goals:
-- Local Text-To-Speech (TTS) endpoint (`/v1/audio/speech`) using native Android TTS engine or lightweight models.
-- Local Embeddings endpoint (`/v1/embeddings`) via compact ONNX/LiteRT models (such as BERT or MiniLM) for offline LAN RAG.
-- OpenAI Response Schema Compliance: Ensure complete matching of all JSON response structures with OpenAI's official specifications.
-- Curated Model Hub Manager: In-app searchable UI list pulling stable model metadata from the Hugging Face [litert-community](https://huggingface.co/litert-community) repository, with automatic downloads, resume capabilities, and SHA256 verification.
-- Lightweight Local Image Generation (`/v1/images/generations`) leveraging compact models (such as TinySD) with RAM safety checks.
+Backlog and future extensions: see [`fable5/backlog.md`](../fable5/backlog.md) (Embeddings, Multi-engine providers, In-app Model Hub, Multi-node federation, Phone-side tools, TTS endpoint).
 
 Non-Goals / Excluded:
 - GGUF/llama.cpp support: Excluded (KO) to maintain microscopic binary size and avoid complex C++ NDK/JNI compilations.
@@ -138,4 +132,5 @@ Potential future directions:
 - tool calling
 - multimodal support
 - distributed edge nodes
+
 

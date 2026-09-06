@@ -100,3 +100,27 @@ This document contains a chronological registry of the primary technical design,
 * **Context:** Android 11+ Scoped Storage restricts third-party file explorers from reading `Android/data/` folders, making it impossible for standard users to find and share local crash log files without PC developer tools (ADB).
 * **Rationale:** The in-app catcher allows the user to see the exact crash report immediately inside the app upon restarting it. This eliminates the need for PC-side debuggers or file manager workarounds, ensuring extremely fast self-diagnostics.
 
+---
+
+## 12. Multi-Provider Strategy Confirmed; LiteRT-LM as First Provider
+* **Date:** 2026-07-05
+* **Decision:** Confirm **LiteRT-LM** as the first and primary concrete `InferenceProvider`, superseding the garden-analysis recommendation to start with MediaPipe tasks-genai. The architecture remains **multi-provider by design**: additional engines (ONNX Runtime Mobile for embeddings/rerankers, MediaPipe tasks-genai for `.task` models) are backlog candidates implemented behind the same `InferenceProvider` interface, never as rewrites.
+* **Context:** `docs/garden-analysis.md` (Phase 1) recommended MediaPipe first; implementation went directly to LiteRT-LM without recording the deviation, leaving the docs in conflict with the code.
+* **Rationale:** The litert-community Gemma 4 `.litertlm` models are the most downloaded and actively maintained on-device LLM artifacts (E2B 1M+ downloads, verified 2026-07-05), LiteRT-LM offers Kotlin Flow streaming and NPU optimization, and the bet has already proven itself on physical devices. Nothing is lost a priori: non-LiteRT models arrive via new providers.
+
+---
+
+## 13. SessionManager Superseded by RequestQueue
+* **Date:** 2026-07-05
+* **Decision:** The `SessionManager` component described in `docs/architecture.md` will **not be built**. Its only necessary responsibility at this scale — preventing concurrent inference on a single-model engine — is fulfilled by a lightweight FIFO **RequestQueue** (single worker, bounded depth, HTTP 429 on overflow) planned in `fable5/roadmap-sessioni.md` session S2.
+* **Context:** The API is stateless (client owns conversation history, OpenAI-style); there are no server-side sessions to manage, so a session abstraction has no job to do.
+* **Rationale:** Building the smallest thing that solves the real problem (concurrency), instead of an abstraction planned before the statelessness decision made it obsolete.
+
+---
+
+## 14. License Change: PolyForm Strict → PolyForm Noncommercial 1.0.0
+* **Date:** 2026-07-05
+* **Decision:** Relicense the repository under **PolyForm Noncommercial 1.0.0**, replacing PolyForm Strict 1.0.0.
+* **Context:** Project goals include community visibility (stars, CV) and possible future monetization. Strict forbids derivatives and redistribution, blocking community use and contributions entirely.
+* **Rationale:** Noncommercial allows anyone to use, modify, and share the software for noncommercial purposes (keeping the community path open) while commercial rights remain reserved to the author (keeping the monetization path open). External contributions are accepted under a lightweight agreement: contributors license their contribution to the project owner.
+

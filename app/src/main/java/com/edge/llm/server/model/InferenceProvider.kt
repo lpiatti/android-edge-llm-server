@@ -18,8 +18,18 @@ import java.io.File
  */
 interface InferenceProvider {
     suspend fun initialize(): Boolean
-    suspend fun generate(prompt: String): String
-    suspend fun generateStream(prompt: String): Flow<String>
+    suspend fun generate(
+        prompt: String,
+        temperature: Double? = null,
+        topP: Double? = null,
+        maxTokens: Int? = null
+    ): String
+    suspend fun generateStream(
+        prompt: String,
+        temperature: Double? = null,
+        topP: Double? = null,
+        maxTokens: Int? = null
+    ): Flow<String>
     fun unload()
 }
 
@@ -36,14 +46,26 @@ class MockInferenceProvider : InferenceProvider {
         true
     }
 
-    override suspend fun generate(prompt: String): String = withContext(Dispatchers.Default) {
+    override suspend fun generate(
+        prompt: String,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?
+    ): String = withContext(Dispatchers.Default) {
         if (!isInit) throw IllegalStateException("Mock provider not initialized")
-        "Ciao! Ti rispondo dal Server Edge Android in modalità MOCK. Ho ricevuto il tuo prompt: \"$prompt\". Tutto funziona a dovere!"
+        ServerConsole.log(LogCategory.ENGINE, "Mock generate: prompt chars=${prompt.length}, temp=$temperature, top_p=$topP, max_tokens=$maxTokens")
+        "Ciao! Ti rispondo dal Server Edge Android in modalità MOCK. Ho ricevuto il tuo prompt (${prompt.length} caratteri). Contesto multi-turn ricevuto con successo!"
     }
 
-    override suspend fun generateStream(prompt: String): Flow<String> = flow {
+    override suspend fun generateStream(
+        prompt: String,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?
+    ): Flow<String> = flow {
         if (!isInit) throw IllegalStateException("Mock provider not initialized")
-        val fullResponse = "Ciao! Ti rispondo dal Server Edge Android in modalità STREAMING MOCK. Ho ricevuto il tuo prompt: \"$prompt\"."
+        ServerConsole.log(LogCategory.ENGINE, "Mock stream: prompt chars=${prompt.length}, temp=$temperature, top_p=$topP, max_tokens=$maxTokens")
+        val fullResponse = "Ciao! Ti rispondo dal Server Edge Android in modalità STREAMING MOCK. Prompt multi-turn ricevuto (${prompt.length} caratteri)."
         // Split full response by spaces to simulate token by token streaming
         val words = fullResponse.split(" ")
         for (i in words.indices) {
@@ -90,11 +112,20 @@ class LiteRtLmInferenceProvider(
         }
     }
 
-    override suspend fun generate(prompt: String): String = withContext(Dispatchers.IO) {
+    override suspend fun generate(
+        prompt: String,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?
+    ): String = withContext(Dispatchers.IO) {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
         val resultBuilder = StringBuilder()
         
-        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running synchronous inference...")
+        if (temperature != null || topP != null || maxTokens != null) {
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        }
+        
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running synchronous inference (prompt chars: ${prompt.length})...")
         activeEngine.createConversation().use { conversation ->
             // Collect flow tokens synchronously into a string
             conversation.sendMessageAsync(prompt).collect { message ->
@@ -106,9 +137,17 @@ class LiteRtLmInferenceProvider(
         finalAnswer
     }
 
-    override suspend fun generateStream(prompt: String): Flow<String> = flow {
+    override suspend fun generateStream(
+        prompt: String,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?
+    ): Flow<String> = flow {
         val activeEngine = engine ?: throw IllegalStateException("LiteRT-LM Engine not initialized or already unloaded")
-        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running streaming inference...")
+        if (temperature != null || topP != null || maxTokens != null) {
+            ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Sampling parameters requested (temp=$temperature, top_p=$topP, max_tokens=$maxTokens). Note: litertlm-android 0.11.0 uses model defaults for session decoding.")
+        }
+        ServerConsole.log(LogCategory.ENGINE, "LiteRT-LM: Running streaming inference (prompt chars: ${prompt.length})...")
         activeEngine.createConversation().use { conversation ->
             conversation.sendMessageAsync(prompt).collect { message ->
                 emit(message.toString())

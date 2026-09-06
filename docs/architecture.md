@@ -20,9 +20,10 @@ The architecture must stay server-oriented. It must not evolve into a chat-centr
 ```text
 InferenceProvider
     -> ModelManager
-        -> SessionManager
+        -> RequestQueue
             -> OpenAI-compatible Server
-            -> Minimal Chat/Test UI
+            -> Web UI (static, served by Ktor)
+            -> Minimal Android UI
 ```
 
 ## Components
@@ -31,13 +32,13 @@ InferenceProvider
 
 Abstracts the underlying inference runtime.
 
-Initial expected responsibility:
+LiteRT-LM (`.litertlm` format, Gemma 4) is the first concrete provider implementation (ADR 12). ONNX Runtime and MediaPipe Tasks GenAI remain candidate backlog providers behind the same unified `InferenceProvider` interface.
 
-- expose a stable local interface for model loading and generation
-- hide runtime-specific details
-- allow future replacement or addition of providers
+Responsibilities:
 
-The project should initially study Google AI Edge / Garden components before committing to runtime integration details.
+- expose a stable local interface for model loading and token generation
+- hide runtime-specific details (LiteRT-LM C++ bindings, session lifecycle)
+- allow future addition of alternate runtime providers behind the common interface
 
 ### ModelManager
 
@@ -45,93 +46,73 @@ Owns model lifecycle at application level.
 
 Expected responsibilities:
 
-- model discovery
-- model metadata
+- model discovery and file picking
+- model metadata extraction
 - model loading and unloading
 - active model tracking
-- future model validation rules
+- memory pre-flight checks and model validation rules
 
-### SessionManager
+### RequestQueue
 
-Owns inference sessions independently from Android UI screens.
+Serializes inference requests on a single worker queue in FIFO order (ADR 13 and `fable5/architettura-api.md` §4).
 
 Expected responsibilities:
 
-- create and track sessions
-- route requests to the active provider/model
-- isolate request lifecycle from UI lifecycle
-- prepare future support for streaming and concurrent requests
+- enqueue incoming inference requests (OpenAI `/v1/chat/completions` and Ollama `/api/chat`)
+- process requests strictly sequentially on a dedicated single coroutine worker to prevent concurrent execution crashes and RAM exhaustion
+- reject incoming requests with HTTP 429 (`Too Many Requests`) when queue capacity is reached
+- isolate request lifecycle from Android UI lifecycle
 
 ### OpenAI-compatible Server
 
-Exposes local network endpoints compatible with OpenAI-style clients.
+Exposes local network endpoints compatible with OpenAI and Ollama clients.
 
-Initial target endpoints:
+Supported and planned endpoints:
 
 - GET /health
 - GET /v1/models
 - POST /v1/chat/completions
+- GET /api/version
+- GET /api/show
+- POST /api/chat
+- POST /api/generate
 
-The first implementation may return fake responses to validate server lifecycle, API shape, and LAN access before runtime integration.
+### Web UI (static, served by Ktor)
 
-### Minimal Chat/Test UI
+Browser-based control surface served directly by Ktor on the local LAN.
+Provides complete interaction (chat, diagnostics, configuration) from any browser client and can be updated independently without rebuilding the APK.
 
-The UI is only a local validation and control surface.
+### Minimal Android UI
 
-It must not own inference logic.
-It must not own API compatibility logic.
-It must not be required by the server runtime path once the server is started.
+Minimal, local control surface programmatically built in pure Kotlin (no XML, no Compose).
+Confined to local device controls: model selection via native file picker, server daemon toggle, log console inspection, and self-contained test ping.
 
 ## Module Boundary Direction
 
-The future implementation should keep these boundaries clear:
+The implementation maintains these strict boundaries:
 
 | Area | Should Own | Should Not Own |
 |---|---|---|
-| Runtime provider | Runtime-specific loading and generation | Android UI state |
-| Model manager | Model lifecycle | HTTP request parsing |
-| Session manager | Request/session coordination | View rendering |
-| Server layer | HTTP endpoints and compatibility mapping | Runtime implementation details |
-| UI layer | Configuration and manual testing | Inference pipeline |
+| Runtime provider | Runtime-specific loading, execution, and token generation | Android UI state or HTTP mapping |
+| Model manager | Model lifecycle and memory safety validation | HTTP request parsing |
+| Request queue | Serialized FIFO request queueing and backpressure (429) | View rendering or model execution details |
+| Server layer | HTTP endpoints, SSE formatting, and compatibility mapping | Runtime implementation details |
+| UI layer (Android) | Device controls, model picking, and manual test pings | Inference pipeline or server lifecycle |
+| Web UI (LAN) | Browser-based chat and status surface | Device-specific Android controls |
 
-## Initial Phasing
+## Phasing & Roadmap
 
-### Phase 0
+- **Phases 0–4:** COMPLETED (Bootstrap, Garden analysis, reproducible CI build, minimal HTTP server, LiteRT-LM runtime integration).
+- **Phase 5 (Stabilization & API Semantics):** Governed by the 8 operational sessions in [`fable5/roadmap-sessioni.md`](../fable5/roadmap-sessioni.md).
+- **Phase 6 (Edge Extensions & Backlog):** Governed by [`fable5/backlog.md`](../fable5/backlog.md).
 
-Repository, documentation, agent workflow, and CI bootstrap.
+## Resolved Questions
 
-No real runtime integration.
-No UI implementation.
-No broad refactor.
+The architectural questions from the bootstrap phase are resolved as follows:
 
-### Phase 1
+- **Android project template:** Minimal Kotlin programmatic skeleton without Compose/XML for lightweight APK and build reproducibility (ADR 5, ADR 6).
+- **Runtime engine:** LiteRT-LM (`litertlm-android`) selected as primary concrete provider (ADR 12).
+- **Embedded HTTP server:** Ktor CIO chosen for asynchronous coroutine performance and low memory overhead (ADR 4).
+- **Background execution & Doze:** Android Foreground Service (`specialUse` on API 34) with `PARTIAL_WAKE_LOCK` and high-performance `WifiLock` (ADR 2, ADR 11).
+- **Request concurrency model:** Single-worker FIFO `RequestQueue` rejecting with HTTP 429 upon capacity overflow (ADR 13).
 
-Study Google AI Edge / Garden architecture and document reusable components.
-
-### Phase 2
-
-Create a minimal reproducible Android build and CI artifact.
-
-### Phase 3
-
-Create a minimal server skeleton with fake OpenAI-compatible responses.
-
-### Phase 4
-
-Integrate real runtime progressively behind InferenceProvider.
-
-## Explicit Non-Goals for the Bootstrap Stage
-
-- No chat application architecture.
-- No runtime fork strategy.
-- No premature multi-provider abstraction beyond interface-level planning.
-- No large agent-generated implementation batch.
-- No hidden state kept only in chat.
-
-## Open Questions
-
-- Which Android project template will be used as the base?
-- Which Garden components are reusable without excessive divergence?
-- Which embedded HTTP server is most appropriate for Android constraints?
-- How should long-running server mode interact with Android foreground services?
-- Which API compatibility subset is required for the first useful client integration?

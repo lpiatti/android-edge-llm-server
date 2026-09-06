@@ -12,7 +12,9 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.edge.llm.server.model.ChatMessage
 import com.edge.llm.server.model.ModelManager
+import com.edge.llm.server.model.PromptBuilder
 import com.edge.llm.server.util.ServerConsole
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -164,14 +166,12 @@ class LlmServerService : Service() {
             TRIM_MEMORY_COMPLETE -> "COMPLETE"
             else -> "UNKNOWN ($level)"
         }
-        ServerConsole.log("⚠️ MEMORY ALERT: Service received onTrimMemory(level=$levelName). Running aggressive garbage collection.")
-        System.gc()
+        ServerConsole.log("⚠️ MEMORY ALERT: Service received onTrimMemory(level=$levelName).")
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        ServerConsole.log("🚨 CRITICAL ALERT: Service received onLowMemory()! Invoking System.gc().")
-        System.gc()
+        ServerConsole.log("🚨 CRITICAL ALERT: Service received onLowMemory()!")
     }
 
     private fun startForegroundNotification() {
@@ -313,10 +313,11 @@ class LlmServerService : Service() {
                         val requestTime = System.currentTimeMillis()
                         try {
                             val req = call.receive<ChatCompletionRequest>()
-                            ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}, stream=${req.stream}) from $clientIp")
+                            ServerConsole.log("--> POST /v1/chat/completions (model=${req.model}, stream=${req.stream}, temp=${req.temperature}, top_p=${req.top_p}, max_tokens=${req.max_tokens}) from $clientIp")
                             
-                            val lastUserMsg = req.messages.lastOrNull { it.role == "user" }?.content ?: ""
-                            ServerConsole.log("    User prompt: \"$lastUserMsg\"")
+                            val chatMessages = req.messages.map { ChatMessage(role = it.role, content = it.content ?: "") }
+                            val fullPrompt = PromptBuilder.buildGemmaPrompt(chatMessages)
+                            ServerConsole.log("    Assembled prompt: ${chatMessages.size} turns, ${fullPrompt.length} chars")
 
                             val activeProvider = ModelManager.activeProvider
                             
@@ -327,7 +328,12 @@ class LlmServerService : Service() {
                                     
                                     try {
                                         var tokenCount = 0
-                                        activeProvider.generateStream(lastUserMsg).collect { token ->
+                                        activeProvider.generateStream(
+                                            prompt = fullPrompt,
+                                            temperature = req.temperature,
+                                            topP = req.top_p,
+                                            maxTokens = req.max_tokens
+                                        ).collect { token ->
                                             tokenCount++
                                             com.edge.llm.server.util.ServerStats.totalTokensGenerated++
                                             val chunk = ChatCompletionChunk(
@@ -367,7 +373,7 @@ class LlmServerService : Service() {
                                         writeStringUtf8("data: $jsonString\n\n")
                                         writeStringUtf8("data: [DONE]\n\n")
                                         flush()
-                                        ServerConsole.log("<-- 200 OK (OpenAI Stream completed)")
+                                        ServerConsole.log("<-- 200 OK (OpenAI Stream completed, $tokenCount tokens)")
                                     } catch (e: Exception) {
                                         ServerConsole.log("ERROR in stream collection: ${e.message}")
                                         writeStringUtf8("data: {\"error\": \"${e.message}\"}\n\n")
@@ -375,7 +381,12 @@ class LlmServerService : Service() {
                                     }
                                 }
                             } else {
-                                val answer = activeProvider.generate(lastUserMsg)
+                                val answer = activeProvider.generate(
+                                    prompt = fullPrompt,
+                                    temperature = req.temperature,
+                                    topP = req.top_p,
+                                    maxTokens = req.max_tokens
+                                )
                                 val tokenCount = answer.length / 4
                                 com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
                                 val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
@@ -383,6 +394,7 @@ class LlmServerService : Service() {
                                     com.edge.llm.server.util.ServerStats.lastGenerationSpeedTps = tokenCount / durationSec
                                 }
                                 
+                                val estimatedPromptTokens = fullPrompt.length / 4
                                 val response = ChatCompletionResponse(
                                     id = "chatcmpl-" + UUID.randomUUID().toString(),
                                     `object` = "chat.completion",
@@ -396,9 +408,9 @@ class LlmServerService : Service() {
                                         )
                                     ),
                                     usage = Usage(
-                                        prompt_tokens = lastUserMsg.length / 4,
+                                        prompt_tokens = estimatedPromptTokens,
                                         completion_tokens = tokenCount,
-                                        total_tokens = (lastUserMsg.length / 4) + tokenCount
+                                        total_tokens = estimatedPromptTokens + tokenCount
                                     )
                                 )
                                 
@@ -441,17 +453,27 @@ class LlmServerService : Service() {
                             val req = call.receive<OllamaChatRequest>()
                             ServerConsole.log("--> POST /api/chat (model=${req.model}, stream=${req.stream}) from $clientIp")
                             
-                            val lastUserMsg = req.messages.lastOrNull { it.role == "user" }?.content ?: ""
-                            ServerConsole.log("    User prompt: \"$lastUserMsg\"")
+                            val chatMessages = req.messages.map { ChatMessage(role = it.role, content = it.content ?: "") }
+                            val fullPrompt = PromptBuilder.buildGemmaPrompt(chatMessages)
+                            ServerConsole.log("    Assembled Ollama prompt: ${chatMessages.size} turns, ${fullPrompt.length} chars")
 
                             val activeProvider = ModelManager.activeProvider
                             val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault())
+
+                            val reqTemp = req.options?.temperature
+                            val reqTopP = req.options?.top_p
+                            val reqMaxTokens = req.options?.num_predict
 
                             if (req.stream == true) {
                                 call.respondBytesWriter(contentType = ContentType.Application.Json) {
                                     try {
                                         var tokenCount = 0
-                                        activeProvider.generateStream(lastUserMsg).collect { token ->
+                                        activeProvider.generateStream(
+                                            prompt = fullPrompt,
+                                            temperature = reqTemp,
+                                            topP = reqTopP,
+                                            maxTokens = reqMaxTokens
+                                        ).collect { token ->
                                             tokenCount++
                                             com.edge.llm.server.util.ServerStats.totalTokensGenerated++
                                             val chunk = OllamaChatResponse(
@@ -480,7 +502,7 @@ class LlmServerService : Service() {
                                         val jsonString = kotlinx.serialization.json.Json.encodeToString(OllamaChatResponse.serializer(), finalChunk)
                                         writeStringUtf8("$jsonString\n")
                                         flush()
-                                        ServerConsole.log("<-- 200 OK (Ollama Stream completed)")
+                                        ServerConsole.log("<-- 200 OK (Ollama Stream completed, $tokenCount tokens)")
                                     } catch (e: Exception) {
                                         ServerConsole.log("ERROR in Ollama stream collection: ${e.message}")
                                         writeStringUtf8("{\"error\": \"${e.message}\"}\n")
@@ -488,7 +510,12 @@ class LlmServerService : Service() {
                                     }
                                 }
                             } else {
-                                val answer = activeProvider.generate(lastUserMsg)
+                                val answer = activeProvider.generate(
+                                    prompt = fullPrompt,
+                                    temperature = reqTemp,
+                                    topP = reqTopP,
+                                    maxTokens = reqMaxTokens
+                                )
                                 val tokenCount = answer.length / 4
                                 com.edge.llm.server.util.ServerStats.totalTokensGenerated += tokenCount
                                 val durationSec = (System.currentTimeMillis() - requestTime) / 1000.0
@@ -587,6 +614,8 @@ class LlmServerService : Service() {
         val model: String,
         val messages: List<Message>,
         val temperature: Double? = 0.7,
+        val top_p: Double? = null,
+        val max_tokens: Int? = null,
         val stream: Boolean? = false
     )
 
@@ -659,9 +688,17 @@ class LlmServerService : Service() {
     )
 
     @Serializable
+    data class OllamaOptions(
+        val temperature: Double? = null,
+        val top_p: Double? = null,
+        val num_predict: Int? = null
+    )
+
+    @Serializable
     data class OllamaChatRequest(
         val model: String,
         val messages: List<OllamaMessage>,
+        val options: OllamaOptions? = null,
         val stream: Boolean? = false
     )
 
