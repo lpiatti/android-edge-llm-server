@@ -32,6 +32,10 @@ object ServerConsole {
     private const val MAX_LOG_LINES = 200
     private val logs = mutableListOf<LogEntry>()
     
+    // File to write persistent logs to
+    @Volatile
+    var logFile: java.io.File? = null
+    
     // Thread-safe listener for new log notifications
     @Volatile
     var logListener: ((LogEntry) -> Unit)? = null
@@ -47,6 +51,20 @@ object ServerConsole {
         logs.add(entry)
         if (logs.size > MAX_LOG_LINES) {
             logs.removeAt(0)
+        }
+        
+        // Append to persistent log file on disk
+        val file = logFile
+        if (file != null) {
+            try {
+                // Simple log rotation: keep file under 500 KB
+                if (file.exists() && file.length() > 500 * 1024) {
+                    file.delete()
+                }
+                file.appendText(entry.toFormattedString() + "\n")
+            } catch (e: Exception) {
+                // Ignore write failures
+            }
         }
         
         // Notify listener

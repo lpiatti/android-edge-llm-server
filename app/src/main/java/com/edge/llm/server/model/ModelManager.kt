@@ -133,6 +133,16 @@ object ModelManager {
             val errorMsg = e.message ?: e.toString()
             val hint = if (useGpu) " (Tip: If GPU load fails, try disabling GPU and using CPU mode. Many Mali/Exynos/Adreno GPUs lack OpenCL compatibility with LiteRT-LM)" else ""
             ServerConsole.log(LogCategory.ENGINE, "ModelManager ERROR: Swapping failed: $errorMsg$hint")
+            
+            // Persist crash details for startup diagnostics screen
+            val logDir = ServerConsole.logFile?.parentFile
+            if (logDir != null) {
+                try {
+                    val crashFile = File(logDir, "crash_log.txt")
+                    crashFile.writeText("ENGINE INITIALIZATION FAILURE - ${java.util.Date()}\nError: $errorMsg$hint")
+                } catch (ex: Exception) {}
+            }
+
             loadingError = errorMsg
             isModelLoaded = false
             isGpuActive = false

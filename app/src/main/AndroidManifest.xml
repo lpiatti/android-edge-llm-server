@@ -48,7 +48,8 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar"
         android:usesCleartextTraffic="true"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:largeHeap="true">
 
         <!-- Native Library Declarations to allow GPU/OpenCL driver access -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>

@@ -60,6 +60,9 @@ class LlmServerService : Service() {
     override fun onCreate() {
         super.onCreate()
         
+        // Initialize persistent logs file in ServerConsole
+        ServerConsole.logFile = java.io.File(filesDir, "persistent_logs.txt")
+        
         // Global Uncaught Exception Handler to capture background thread crash logs
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -110,7 +113,65 @@ class LlmServerService : Service() {
         // 3. Launch Ktor embedded HTTP Server
         startHttpServer()
 
+        // Auto-load model configuration from SharedPreferences on service startup
+        val prefs = getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
+        val isMock = prefs.getBoolean("is_mock_engine", true)
+        val isGpu = prefs.getBoolean("is_gpu_backend", false)
+        val modelPath = prefs.getString("selected_model_path", null)
+        
+        if (!ModelManager.isModelLoaded && !ModelManager.isLoading) {
+            ServerConsole.log("LlmServerService: Auto-restoring saved model configuration (isMock=$isMock, path=$modelPath, useGpu=$isGpu)...")
+            Thread {
+                try {
+                    kotlinx.coroutines.runBlocking {
+                        ModelManager.loadModel(modelPath, isMock, isGpu)
+                    }
+                    ServerConsole.log("LlmServerService: Saved model auto-restored successfully.")
+                } catch (e: Exception) {
+                    val errorMsg = e.message ?: e.toString()
+                    ServerConsole.log("LlmServerService: Failed to auto-restore saved model: $errorMsg")
+                    
+                    // Write failure to crash_log.txt so it shows in UI
+                    try {
+                        val file = java.io.File(filesDir, "crash_log.txt")
+                        java.io.FileOutputStream(file).use { fos ->
+                            java.io.PrintStream(fos).use { ps ->
+                                ps.println("ENGINE AUTO-RESTORE FAILURE - ${java.util.Date()}")
+                                ps.println("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
+                                ps.println("Error: $errorMsg")
+                                if (isGpu) {
+                                    ps.println("\nTip: Auto-restore failed in GPU mode. Try launching CPU mode in UI.")
+                                }
+                            }
+                        }
+                    } catch (ex: Exception) {}
+                }
+            }.start()
+        }
+
         return START_STICKY
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val levelName = when (level) {
+            TRIM_MEMORY_RUNNING_MODERATE -> "RUNNING_MODERATE"
+            TRIM_MEMORY_RUNNING_LOW -> "RUNNING_LOW"
+            TRIM_MEMORY_RUNNING_CRITICAL -> "RUNNING_CRITICAL"
+            TRIM_MEMORY_UI_HIDDEN -> "UI_HIDDEN"
+            TRIM_MEMORY_BACKGROUND -> "BACKGROUND"
+            TRIM_MEMORY_MODERATE -> "MODERATE"
+            TRIM_MEMORY_COMPLETE -> "COMPLETE"
+            else -> "UNKNOWN ($level)"
+        }
+        ServerConsole.log("⚠️ MEMORY ALERT: Service received onTrimMemory(level=$levelName). Running aggressive garbage collection.")
+        System.gc()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        ServerConsole.log("🚨 CRITICAL ALERT: Service received onLowMemory()! Invoking System.gc().")
+        System.gc()
     }
 
     private fun startForegroundNotification() {
