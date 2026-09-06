@@ -24,10 +24,13 @@ Progetto strutturato secondo il Metodo Agorà v3.3. Implementata la Sessione S2 
 
 ## Prossimo passo
 
-- Eseguire push del branch `feature/request-queue` e verificare il superamento della build CI (`testDebugUnitTest assembleDebug`).
-- Eseguire merge su `main` e scaricare l'APK compilato dalla CI.
+- Eseguire il merge della [PR #8](https://github.com/lpiatti/android-edge-llm-server/pull/8) su `main` (build e unit test GitHub Actions passati con successo).
+- Scaricare l'APK debug compilato (`edge-llm-server-debug-apk`) dall'azione GitHub Actions run 34025798796 e installarlo sul dispositivo.
 - Testare su dispositivo fisico:
-  - Test interattivo con la Quick Shell Prompt.
+  - Test interattivo con la Quick Shell Prompt (`> [ Frase... ]` e `[ SEND ]`).
+  - Test preset `[ S2 QUEUE ]` per verificare la risposta 429 al 5° slot concorrente.
+  - Test preset `[ S1 RECALL ]` per verificare la memoria del contesto conversazionale.
+  - Test streaming SSE per verificare la visualizzazione progressiva dei token.
   - Test preset `[ S2 QUEUE ]` per verificare la risposta 429 al 5° slot concorrente.
   - Test preset `[ S1 RECALL ]` per verificare la memoria del contesto conversazionale.
 
