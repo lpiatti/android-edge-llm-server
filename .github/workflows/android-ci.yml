@@ -24,14 +24,14 @@ jobs:
 
           required_files=(
             "README.md"
+            "STATE.md"
+            "DECISIONI.md"
             "docs/index.md"
-            "docs/project-state.md"
             "docs/roadmap.md"
+            "docs/api-contract.md"
             "docs/architecture.md"
             "AGENTS.md"
             ".agents/README.md"
-            ".agents/bootstrap-phase-0.md"
-            ".agents/create-android-skeleton.md"
             "CLAUDE.md"
             ".claude/README.md"
           )

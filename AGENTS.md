@@ -29,20 +29,21 @@ tramite GitHub Actions CI (`.github/workflows/android-ci.yml`) su feature branch
 ## Confini
 
 - Il repository governa il codice Android (`app/`), la configurazione Gradle, la
-  documentazione architetturale (`docs/`), i piani operativi (`fable5/`), le
-  istruzioni agenti (`.agents/`, `CLAUDE.md`, `CODEX.md`) e le pipeline CI (`.github/`).
+  documentazione (`docs/`, con storico in `docs/archive/`), le istruzioni agenti
+  (`.agents/`, `CLAUDE.md`, `CODEX.md`) e le pipeline CI (`.github/`).
 - Nessun accesso o dipendenza da altri progetti della workspace; operatività e
   checkpoint rimangono rigorosamente all'interno di questo repository.
 - Non modificare il codice sorgente Android o i file Gradle se non specificamente
   richiesto dal task.
-- **Perimetro operativo sessioni:** Lavorare esclusivamente sulla sessione assegnata
-  definita in [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md). Qualsiasi altra
-  modifica richiede l'approvazione del proprietario del progetto. Non avviare voci
-  del backlog ([`fable5/backlog.md`](fable5/backlog.md)) in modo opportunistico.
-- **Riferimenti documentali obbligatori:** Prima di proporre modifiche o piani,
-  consultare in ordine: `README.md`, `docs/project-state.md`, `docs/roadmap.md`,
-  `docs/architecture.md`, `docs/index.md`, [`fable5/index.md`](fable5/index.md),
-  [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md) e `.agents/README.md`.
+- **Perimetro operativo:** lavorare esclusivamente sul milestone assegnato definito in
+  [`docs/roadmap.md`](docs/roadmap.md). Qualsiasi altra modifica richiede l'approvazione
+  del proprietario del progetto. Non avviare voci del backlog
+  ([`docs/backlog.md`](docs/backlog.md)) in modo opportunistico.
+- **Riferimenti documentali obbligatori:** prima di proporre modifiche o piani,
+  consultare in ordine: `STATE.md`, [`docs/roadmap.md`](docs/roadmap.md),
+  [`docs/api-contract.md`](docs/api-contract.md) (se si toccano endpoint),
+  `docs/architecture.md`, `DECISIONI.md`. Indice completo: `docs/index.md`.
+  I file in `docs/archive/` non sono fonte di verità.
 
 ## Regole specifiche
 
@@ -61,14 +62,14 @@ tramite GitHub Actions CI (`.github/workflows/android-ci.yml`) su feature branch
 - Il workflow `.github/workflows/android-ci.yml` (step `Verify Mandatory Bootstrap & Rules Files`)
   verifica tassativamente la presenza dei seguenti file:
   - `README.md`
+  - `STATE.md`
+  - `DECISIONI.md`
   - `docs/index.md`
-  - `docs/project-state.md`
   - `docs/roadmap.md`
+  - `docs/api-contract.md`
   - `docs/architecture.md`
   - `AGENTS.md`
   - `.agents/README.md`
-  - `.agents/bootstrap-phase-0.md`
-  - `.agents/create-android-skeleton.md`
   - `CLAUDE.md`
   - `.claude/README.md`
   Nessuno di questi file deve essere rimosso o rinominato senza coordinamento.
@@ -81,15 +82,16 @@ tramite GitHub Actions CI (`.github/workflows/android-ci.yml`) su feature branch
   Foreground Service (`specialUse` su API 34), con `PowerManager.PARTIAL_WAKE_LOCK`,
   `WifiManager.WifiLock` ad alte prestazioni e riavvio automatico (`START_STICKY`, `BootReceiver`).
 - **Zero XML / Zero Compose**: interfaccia Android interamente programmatica in
-  puro Kotlin (`MainActivity.kt`) per garantire bundle APK microscopic (< 2.5 MB)
-  ed evitare problemi di compatibilità dei compilatori.
-- **Provider di inferenza**: LiteRT-LM confermato provider primario (`.litertlm`
-  Gemma 4). Escluso GGUF/llama.cpp.
+  puro Kotlin, stile TUI, per riproducibilità di build ed evitare problemi di
+  compatibilità dei compilatori. Da conservare: onboarding permessi, caricamento
+  diretto del modello con scelta CPU/GPU, separazione tab ENGINE / DAEMON.
+- **Provider di inferenza**: LiteRT-LM unico motore (`.litertlm`). Altri motori
+  (GGUF/llama.cpp, ONNX, ExecuTorch) solo su bisogno concreto e decisione registrata.
 - **Coda richieste (RequestQueue)**: serializzazione FIFO delle richieste di
   inferenza su singolo worker con HTTP 429 su overflow (sostituisce SessionManager).
-- **Direzione operativa sessioni**: seguire le 8 sessioni definite in
-  [`fable5/roadmap-sessioni.md`](fable5/roadmap-sessioni.md) e il contratto API in
-  [`fable5/architettura-api.md`](fable5/architettura-api.md).
+- **Direzione operativa**: seguire i milestone di [`docs/roadmap.md`](docs/roadmap.md)
+  e il contratto API di [`docs/api-contract.md`](docs/api-contract.md); aggiornare la
+  matrice di compatibilità nella stessa PR che cambia un endpoint.
 
 ### Disciplina delle modifiche
 - Prima di intervenire sul codice, verificare lo stato effettivo del branch e del filesystem.

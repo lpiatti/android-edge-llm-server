@@ -2,39 +2,38 @@
 
 An Android-native edge AI server focused on exposing local LLM inference through OpenAI and Ollama-compatible APIs. This application is designed to turn recycled or dedicated Android devices (running Android 10+) into lightweight, high-performance, local LAN server nodes.
 
-**Project direction:** See [fable5/index.md](fable5/index.md) for the operational roadmap and architectural realignment resulting from the Fable 5 consultancy.
+**Status:** `v1` — first milestone reached. Roadmap to full OpenAI/Ollama compatibility: [docs/roadmap.md](docs/roadmap.md).
 
-## Technical Documentation
-
-To explore the architecture, guidelines, and technical history of this project, refer to the following documents:
+## Documentation
 
 | Document | Description |
 |---|---|
-| 🎯 [Operational Roadmap (Fable 5)](fable5/roadmap-sessioni.md) | 8-session phased execution plan (S1–S8) with Definition of Done and CI acceptance criteria. |
-| 📋 [Project State](docs/project-state.md) | Current project phase, immediate milestones, and operational status. |
-| 🗺️ [Roadmap](docs/roadmap.md) | Phased milestones from bootstrap to full background stabilization. |
-| 🏛️ [Architecture Notes](docs/architecture.md) | Decoupled server boundaries (Background Foreground Service vs Programmatic UI). |
-| 🛡️ [Daemon Stability Guidelines](docs/daemon-stability-guidelines.md) | Wakelocks, battery-saver bypasses, memory management (LMK), and self-healing. |
-| 📜 [Architectural Decision Log (ADR)](docs/decision-log.md) | Chronological history of major design, SDK, and framework selections. |
-| 🔬 [Garden Architecture Analysis](docs/garden-analysis.md) | Technical comparison between Google MediaPipe and LiteRT-LM runtimes. |
-| 🤖 [Agent Operating Contract](AGENTS.md) | Development rules, branch workflows, and constraints for coding agents. |
+| [STATE.md](STATE.md) | Current state and next step (IT). |
+| [docs/roadmap.md](docs/roadmap.md) | Goal and milestones M0–M7 with acceptance criteria (IT). |
+| [docs/api-contract.md](docs/api-contract.md) | HTTP contract and **compatibility matrix** — what works today, what is planned. |
+| [docs/architecture.md](docs/architecture.md) | Components and boundaries (Foreground Service, queue, provider, UI). |
+| [docs/daemon-stability-guidelines.md](docs/daemon-stability-guidelines.md) | Wakelocks, Doze, memory (LMK), self-healing. |
+| [DECISIONI.md](DECISIONI.md) | Decision log (IT). |
+| [docs/index.md](docs/index.md) | Full documentation index. |
+| [AGENTS.md](AGENTS.md) | Operating contract for coding agents. |
 
 ## Core Features
 
-*   **Decoupled Foreground Daemon:** The Ktor server and LiteRT-LM runtime run inside a high-resilience Android Foreground Service, remaining active even if the UI is closed.
-*   **Zero-Overhead Retro UI:** Programmatically designed in pure Kotlin (no XML, no Compose) to minimize APK weight and build dependencies.
-*   **OpenAI & Ollama compatible endpoints (see Known limitations):** Exposes `/v1/chat/completions` (OpenAI) and `/api/chat` (Ollama) endpoints, including Server-Sent Events (SSE) streaming.
-*   **LAN Adapter Binding:** Dynamic IP interface selector (Wi-Fi, Cellular, All interfaces) to securely control bind bindings.
-*   **Local Exception Catcher:** Intercepts runtime crashes and prints stack traces directly inside the app on subsequent launch to aid diagnostics without computer ADB access.
+*   **Decoupled Foreground Daemon:** Ktor server and LiteRT-LM runtime run inside a resilient Android Foreground Service (wake lock, Wi-Fi lock, restart on boot), independent from the UI.
+*   **OpenAI & Ollama chat endpoints:** `/v1/chat/completions` and `/api/chat` with full multi-turn history and streaming (SSE / NDJSON). Exact coverage: [compatibility matrix](docs/api-contract.md#0-compatibility-matrix).
+*   **Serialized inference:** FIFO request queue, HTTP 429 with `Retry-After` on overflow.
+*   **Direct model loading:** pick a `.litertlm` file, choose CPU or GPU backend, with RAM and SoC feasibility audit.
+*   **Retro terminal UI:** pure programmatic Kotlin (no XML, no Compose), with built-in API tester and log console.
+*   **LAN adapter binding:** listen on all interfaces, Wi-Fi only, or cellular only.
+*   **In-app crash catcher:** stack traces shown on next launch, no ADB needed.
 
-## Known Limitations (Current Phase — September 2026)
+## Known Limitations (v1)
 
-*   **Full-history processing:** Multi-turn history from the `messages` array is currently IN PROGRESS (targeted in Session S1 per [fable5/roadmap-sessioni.md](fable5/roadmap-sessioni.md)).
-*   **Request queueing:** Serialized FIFO request queueing with HTTP 429 rejection on overflow is IN PROGRESS (Session S2).
-*   **Tool calling:** Tool/function calling is IN PROGRESS (Sessions S5–S6).
-*   **Static Web UI:** Browser-based control surface served by Ktor is IN PROGRESS (Session S7).
-*   **Single concurrent inference:** The edge runtime supports only one inference execution at a time.
-*   **Network profile:** Plain HTTP intended for trusted local LAN setups (no built-in TLS).
+*   **Tool calling:** not yet supported — `tools` in requests is ignored (milestone M4).
+*   **Some request fields:** `max_tokens`/`num_predict` not enforced, `stop` unsupported, `content` must be a string (M2).
+*   **Ollama:** `/api/version`, `/api/show`, `/api/generate`, `/api/ps` missing — Open WebUI detection may fail (M3).
+*   **No authentication** (optional API key planned in M6). Plain HTTP, intended for trusted LANs.
+*   **Single concurrent inference**, and every request re-processes the whole context (prefill optimization in M5).
 
 ## Tested Models
 

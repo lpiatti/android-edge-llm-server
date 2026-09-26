@@ -1,136 +1,112 @@
 # Roadmap
 
-## Phase 0 — Repository Bootstrap
+Unica pianificazione del progetto. Sostituisce `fable5/roadmap-sessioni.md` e le fasi 0–6
+(archiviate in [`archive/`](archive/)). Ciò che non è qui sta nel [backlog](backlog.md) e
+non si avvia senza una decisione del proprietario registrata in `DECISIONI.md`.
 
-Status: COMPLETED
+## Obiettivo
 
-Goals:
-- initialize repository
-- define architecture direction
-- establish operational workflow
-- prepare documentation structure
+Server LLM su Android, sempre attivo, con API **OpenAI e Ollama compatibili al punto che
+client reali** (SDK `openai`, Open WebUI, un harness agentico) **funzionano senza
+adattamenti**; ottimizzato per la latenza su contesti lunghi; UI Android minimale per
+controllo e collaudo.
 
-Deliverables:
-- README
-- roadmap
-- architecture notes
-- project-state
-- GitHub Actions bootstrap
+"Completo" è definito dalla matrice in [api-contract.md](api-contract.md) §0.
 
----
+## Punto di partenza — tag `v1`
 
-## Phase 1 — Garden Analysis
+Server Ktor CIO in Foreground Service 24/7, LiteRT-LM (Gemma 4 `.litertlm`, CPU/GPU),
+`/v1/chat/completions` e `/api/chat` con history completa e streaming, `RequestQueue`
+FIFO con 429, onboarding permessi, UI TUI a 4 tab, CI GitHub Actions con test JVM e APK.
 
-Status: COMPLETED
+## Definition of Done comune
 
-Goals:
-- understand Google Garden architecture
-- identify reusable runtime components
-- understand model lifecycle
-- understand token streaming
-- identify UI/runtime coupling points
+- Un milestone = un branch = una PR verso `main`, CI verde.
+- Logica pura coperta da test JVM; comportamento verificabile coperto da un test in-app
+  (tab TEST) quando ha senso.
+- Evidenza nella PR: output del test in-app o del client esterno indicato. "Dovrebbe
+  funzionare" non è evidenza.
+- `STATE.md` aggiornato; decisioni durevoli in `DECISIONI.md`; matrice di
+  `api-contract.md` aggiornata se cambia un endpoint.
+- Niente scope creep: ciò che emerge va nel backlog.
 
-Deliverables:
-- architecture analysis document
-- runtime component map
-- dependency map
-- integration strategy notes
+## Milestone
 
----
+| M | Branch suggerito | Obiettivo | Verifica |
+|---|---|---|---|
+| M0 | `claude/…` (questo) | Riordino documentale | Struttura unica, link validi, CI verde |
+| M1 | `feature/m1-benchmark` | Misure affidabili | Numeri TTFT/tok-s registrati in `STATE.md` |
+| M2 | `feature/m2-openai-compat` | Compatibilità OpenAI | Script con SDK `openai` Python passa |
+| M3 | `feature/m3-ollama-compat` | Compatibilità Ollama | Open WebUI si collega come Ollama e fa streaming |
+| M4 | `feature/m4-tool-calling` | Tool calling OpenAI + Ollama | Self-test in-app + un harness reale completa un task con ≥1 tool |
+| M5 | `feature/m5-prefix-reuse` | Ottimizzazione prefill | TTFT del secondo turno molto più basso del primo |
+| M6 | `feature/m6-auth-safe-load` | API key + caricamento sicuro | 401/200 con e senza chiave; modello troppo grande → rifiuto chiaro |
+| M7 | `feature/m7-ui` | UI riordinata | Checklist UI sotto, verificata su device |
 
-## Phase 2 — Minimal Android Build
+Ordine vincolante solo per M1 → M4 (i numeri di M1 decidono la priorità di M4, vedi
+pivot in `api-contract.md` §6). M7 può essere anticipato se la UI ostacola i test.
 
-Status: COMPLETED
+### M1 — Misure affidabili
 
-Goals:
-- compile reproducible APK
-- validate Android toolchain
-- validate GitHub Actions Android pipeline
-- validate artifact generation
+- Pulsante `[ BENCHMARK ]` nel tab TEST: prompt sintetici ~500/~2000/~4000 token inviati
+  via HTTP a `localhost` in streaming; misura TTFT (primo chunk) e tok/s in decode;
+  tabella con `[ COPY ]`. Da eseguire con GPU ON e OFF.
+- Correggere `scripts/benchmark_prefill.{sh,ps1}`: oggi usano `stream:false` (misurano il
+  tempo totale, non il TTFT) e il testo si ferma a ~1000 token.
+- Registrare device, backend, modello, numeri in `STATE.md`.
 
-Deliverables:
-- working CI pipeline
-- downloadable APK artifact
-- first successful cloud build
+### M2 — Compatibilità OpenAI
 
----
+Righe OpenAI ❌/🟡 della matrice: `content` come array, `max_tokens` realmente applicato +
+`max_completion_tokens`, `stop`, `usage` e `stream_options.include_usage`,
+`response_format` best-effort, errori conformi, `n>1` → 400.
+Verificare il doppio template (prompt già formattato passato a `Conversation`), vedi
+`api-contract.md` §2. Verifica: script Python con SDK `openai` (chat, stream, stop,
+usage) nella PR.
 
-## Phase 3 — Minimal Server Skeleton
+### M3 — Compatibilità Ollama
 
-Status: COMPLETED
+`/api/version`, `/api/show`, `/api/generate`, `/api/ps`; `/api/tags` con valori reali;
+`options.stop`, `num_ctx`; 501 per gli endpoint di gestione modelli.
+Verifica: Open WebUI collegato come Ollama (e come OpenAI) — screenshot.
 
-Goals:
-- embedded HTTP server
-- health endpoint
-- fake OpenAI-compatible endpoint
-- validate Android background lifecycle
+### M4 — Tool calling
 
-Initial Endpoints:
-- GET /health
-- GET /v1/models
-- POST /v1/chat/completions
+1. Verificare se LiteRT-LM espone il function calling nativo di Gemma 4 → decisione.
+2. Non-streaming OpenAI + Ollama, parser robusto con test JVM.
+3. Streaming `tool_calls` delta.
+4. Self-test in-app `[ TOOL CALL ]`: giro completo con un tool reale in sola lettura
+   eseguito dall'app-client (es. `get_battery_status`); il server non esegue tool.
+5. Harness reale collegato via base URL custom: GO/NO-GO sull'uso agentico in `DECISIONI.md`.
 
-Deliverables:
-- fake response server
-- local network accessibility
-- API compatibility tests
+### M5 — Ottimizzazione prefill
 
----
+Riuso del KV-cache tra richieste che condividono il prefisso (oggi ogni richiesta crea
+una `Conversation` nuova). Dipende da cosa espone LiteRT-LM: prima indagine, poi
+implementazione o decisione motivata di rinuncia. Semantica stateless invariata.
 
-## Phase 4 — Runtime Integration
+### M6 — API key e caricamento sicuro
 
-Status: COMPLETED
+API key opzionale (`api-contract.md` §5) con campo nel tab DAEMON. Pre-flight RAM
+prima del caricamento (dimensione × fattore vs RAM disponibile, con "forza comunque"),
+crash marker per diagnosticare OOM nativi al riavvio successivo.
 
-Goals:
-- [x] Milestone 4.1: Integrate LiteRT-LM dependency, configure ProGuard rules, upgrade coroutines/Ktor to 3.0.3, stabilize foreground service across SDKs, and build in-app crash reporter.
-- [x] Milestone 4.2: Implement local public folder scanning, write `InferenceProvider` abstraction layer, load local quantized `.litertlm` models, and stream real token generation.
-- [x] Milestone 4.3: UI Refactoring & System File Picker. Add a sticky status island, re-order and re-label tabs (Model Engine, Server Daemon, Test Suite), add collapsible diagnostic console logs, enforce state interlocks, and replace the storage directory scanner with a native System File Picker (`ACTION_OPEN_DOCUMENT`).
+### M7 — UI riordinata
 
-Deliverables:
-- [x] Aligned build configuration and stable background server running Ktor 3.0.3 and LiteRT-LM on physical devices.
-- [x] Local models directory scanner (Broad fallback scanner) inside MainActivity.
-- [x] Real token generation and inference abstraction.
-- [x] Streaming HTTP responses (OpenAI SSE chunk flows and Ollama stream JSON lines).
-- [x] Collapsible monospaced log windows, always-visible status island, and native android file picker for `.litertlm` files.
+Da **conservare** (scelte del proprietario):
+- stile grafico TUI/terminale monospazio;
+- percorso di avvio dopo l'installazione (onboarding permessi → vista principale);
+- caricamento diretto del modello dal file con scelta CPU/GPU;
+- separazione netta tra **motore** (tab ENGINE) e **server HTTP** (tab DAEMON).
 
----
+Da **riordinare**:
+- tab TEST come unico punto dei test: benchmark (M1), self-test tool (M4), preset API,
+  quick shell; eliminare preset obsoleti legati alle vecchie sessioni (`S1 RECALL`, `S2 QUEUE`);
+- ridurre il rumore del tab ENGINE (audit RAM e guida Samsung in una sezione comprimibile);
+- spezzare `MainActivity.kt` (~3000 righe) in un file per tab, senza cambiare stile né
+  comportamento.
 
-## Phase 5 — Server Stabilization & API Semantics
+## Fuori roadmap (vedi backlog)
 
-Status: IN PROGRESS
-
-Operational plan: [`fable5/roadmap-sessioni.md`](../fable5/roadmap-sessioni.md) (Sessions S1–S8)
-- S1: Correct API semantics (full `messages` array context + sampling parameters)
-- S2: RequestQueue (single-worker FIFO serialization, HTTP 429 rejection)
-- S3: Safe model loading (RAM pre-flight, crash marker, explicit errors)
-- S4: Ollama API complete & optional API key authentication
-- S5: Tool calling foundation (request parser, prompt template, tool_calls output)
-- S6: Tool calling streaming & agent harness validation
-- S7: Static Web UI served by Ktor (browser control surface)
-- S8: Consolidation release (bugfixes, doc sync, tagged APK release)
-
----
-
-## Phase 6 — Edge Extensions & Backlog
-
-Status: PLANNED
-
-Backlog and future extensions: see [`fable5/backlog.md`](../fable5/backlog.md) (Embeddings, Multi-engine providers, In-app Model Hub, Multi-node federation, Phone-side tools, TTS endpoint).
-
-Non-Goals / Excluded:
-- GGUF/llama.cpp support: Excluded (KO) to maintain microscopic binary size and avoid complex C++ NDK/JNI compilations.
-
----
-
-## Long-Term Direction
-
-Potential future directions:
-- multiple runtime providers
-- LAN discovery
-- agent integration
-- lightweight orchestration
-- tool calling
-- multimodal support
-- distributed edge nodes
-
-
+Web UI servita da Ktor, embeddings, altri motori (ONNX/GGUF), model hub, federazione
+multi-telefono, tool eseguiti sul telefono, TTS.

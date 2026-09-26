@@ -1,41 +1,22 @@
 # Agent Workspace
 
-This directory contains reusable task briefs, role-specific instructions, and execution templates for coding agents.
-
-AGENTS.md remains the general contract.
-Files in this directory provide more specific operational guidance.
+`AGENTS.md` is the general contract. This directory holds task briefs for specific work,
+when a milestone needs more than what [`docs/roadmap.md`](../docs/roadmap.md) says.
 
 ## Files
 
-| File | Purpose | Status |
-|---|---|---|
-| bootstrap-phase-0.md | Task brief for completing or reviewing repository bootstrap work | Historical (Phase 0 completed) |
-| create-android-skeleton.md | Task brief for creating minimal Android Kotlin project skeleton | Historical (Phase 2 completed) |
-
-Current operational task briefs are the 8 sessions defined in [`fable5/roadmap-sessioni.md`](../fable5/roadmap-sessioni.md).
+None active. Historical briefs (phase 0 bootstrap, phase 2 Android skeleton) are in
+[`docs/archive/`](../docs/archive/README.md).
 
 ## Usage Rules
 
-- Read AGENTS.md first.
-- Read README.md, docs/project-state.md, docs/roadmap.md, docs/architecture.md, and fable5/roadmap-sessioni.md before proposing architectural or implementation changes.
-- Use the specific session brief from `fable5/roadmap-sessioni.md` matching the assigned task.
-- If work outside the planned sessions is contemplated, consult `fable5/backlog.md` and obtain project owner approval.
-- Treat all implementation plans incrementally based on the actual branch state, avoiding duplicating configurations or setups that have already been committed.
-
-## Agent Roles
-
-### ChatGPT
-
-Acts as orchestrator, reviewer, architectural coordinator, and continuity layer.
-
-### Claude Code
-
-Acts as implementation and repository operation agent.
-
-### Codex
-
-Acts as implementation, refactoring, and code review agent.
+- Read `AGENTS.md` first, then `STATE.md` and the assigned milestone in `docs/roadmap.md`.
+- Read `docs/api-contract.md` before touching any endpoint; update its compatibility
+  matrix in the same PR.
+- Work outside the roadmap requires project-owner approval and an entry in `DECISIONI.md`
+  (candidates live in `docs/backlog.md`).
+- Plan incrementally from the actual branch state; do not duplicate what is already committed.
 
 ## Persistent Output
 
-Important decisions must end up in repository files, not only in chat.
+Important decisions must end up in repository files (`DECISIONI.md`, `STATE.md`), not only in chat.

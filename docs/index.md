@@ -1,56 +1,33 @@
-# Documentation Index
+# Documentation index
 
-This directory contains the persistent technical documentation for the Android Edge LLM Server project.
+One topic per file; each fact lives in exactly one place.
 
-The repository is the source of truth for project state, roadmap, architectural direction, and agent workflow rules.
-
-## Core Documents
-
-| Document | Purpose | Status |
+| File | Contenuto | Lingua |
 |---|---|---|
-| README.md | Project overview, vision, initial direction, and working model | Active |
-| docs/project-state.md | Current objective, constraints, operational workflow, and immediate priorities | Active |
-| docs/roadmap.md | Phase-based roadmap from bootstrap to runtime integration | Active |
-| docs/architecture.md | Initial conceptual architecture and boundaries | Active |
-| docs/daemon-stability-guidelines.md | Platform SDK cut-offs, dedicated server profile, and background stability strategies | Active |
-| docs/decision-log.md | Architecture decision registry from project bootstrap to present | Active |
-| [docs/garden-analysis.md](garden-analysis.md) | Architectural analysis of Google AI Edge/Garden components, component maps, and integration roadmap | Active |
-| [fable5/](../fable5/index.md) | Operational roadmap (S0–S8), API architecture contract, and backlog from Fable 5 | Active |
+| [`../STATE.md`](../STATE.md) | Stato attuale, prossimo passo (unica fonte di stato) | IT |
+| [`../DECISIONI.md`](../DECISIONI.md) | Registro unico delle decisioni durevoli | IT |
+| [roadmap.md](roadmap.md) | Obiettivo, milestone M0–M7, criteri di accettazione | IT |
+| [backlog.md](backlog.md) | Everything valuable not in the roadmap | EN |
+| [api-contract.md](api-contract.md) | HTTP contract and compatibility matrix = definition of "complete" | EN |
+| [architecture.md](architecture.md) | Components and boundaries as they are | EN |
+| [daemon-stability-guidelines.md](daemon-stability-guidelines.md) | FGS, locks, Doze, LMK rules | EN |
+| [ci.md](ci.md) | GitHub Actions: cosa fa, come leggere un fallimento | IT |
+| [archive/](archive/README.md) | Historical documents (phases 0–4, Fable 5 consultancy) — not operational | — |
 
-## Agent Instructions
+Agent rules: [`../AGENTS.md`](../AGENTS.md) (entry points `CLAUDE.md`, `CODEX.md`, `.agents/`, `.claude/`).
 
-Agent-oriented instructions are intentionally kept outside the docs directory.
+## Reading order
 
-| Path | Purpose |
-|---|---|
-| AGENTS.md | General operating contract for all coding agents |
-| .agents/ | Agent-specific prompts and task briefs |
-| CLAUDE.md | Claude Code entrypoint instructions |
-| .claude/ | Claude Code project support area |
+1. `AGENTS.md`
+2. `STATE.md`
+3. `docs/roadmap.md` — find the current milestone
+4. `docs/api-contract.md` — if the milestone touches endpoints
+5. `docs/architecture.md`
+6. Only the code files the milestone touches.
 
-## Documentation Rules
+## Rules
 
-- Keep project status in docs/project-state.md.
-- Keep roadmap and phase changes in docs/roadmap.md.
-- Keep architectural rationale in docs/architecture.md.
-- Keep operational session plans in fable5/roadmap-sessioni.md.
-- Keep agent behavior, execution rules, and implementation guardrails in AGENTS.md and .agents/.
-- Do not use chat history as source of truth when repository documentation conflicts with memory.
-
-## Current Reading Order
-
-For project orientation, read in this order:
-
-1. README.md
-2. docs/project-state.md
-3. docs/roadmap.md
-4. docs/architecture.md
-5. docs/index.md
-6. fable5/index.md
-7. fable5/roadmap-sessioni.md
-8. docs/daemon-stability-guidelines.md
-9. docs/decision-log.md
-10. AGENTS.md
-11. .agents/README.md
-12. agent-specific files in .agents/
-
+- State only in `STATE.md` (rewrite, don't append). Decisions only in `DECISIONI.md`
+  (append; superseded entries are marked, never deleted).
+- A document is updated in the same PR that makes it obsolete.
+- Files in `archive/` are never updated and never cited as current truth.

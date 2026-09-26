@@ -8,9 +8,11 @@ illimitati** (sui runner standard): usali senza ansia.
 
 Due job in sequenza:
 1. **bootstrap-verification**: controlla che i file di documentazione obbligatori
-   esistano. Fallisce il build se un agente cancella un file di contratto.
-2. **android-build**: JDK 17 + Gradle 8.4, compila `assembleDebug` e carica l'APK come
-   *artifact* scaricabile (conservato 7 giorni: tab Actions → run → Artifacts).
+   esistano (elenco nel workflow e in `AGENTS.md`). Fallisce il build se un agente
+   cancella un file di contratto.
+2. **android-build**: JDK 17 + Gradle 8.4, esegue i test JVM (`testDebugUnitTest`) e
+   compila `assembleDebug`, poi carica l'APK come *artifact* scaricabile (conservato
+   7 giorni: tab Actions → run → Artifacts).
 
 **Un dettaglio importante che forse non sai**: il trigger `push` è attivo solo su
 `main` e `feature/android-skeleton`. Le push sugli altri feature branch NON compilano
@@ -25,28 +27,12 @@ on:
     branches: [ main ]
 ```
 
-## I tre upgrade che consiglio (in ordine)
+## Upgrade possibili (in ordine di utilità)
 
-### 1. Job di test unitari (arriva con la sessione S1)
-I test JVM girano sul runner Linux senza emulatore, in secondi:
+I test JVM sono già nel job di build: "il test passa in CI" è il criterio di
+accettazione dei milestone, verificabile e non opinabile.
 
-```yaml
-  unit-tests:
-    needs: bootstrap-verification
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: 'zulu', java-version: '17' }
-      - uses: gradle/actions/setup-gradle@v3
-        with: { gradle-version: '8.4' }
-      - run: gradle testDebugUnitTest --no-daemon
-```
-
-Da qui in poi "il test passa in CI" diventa il criterio di accettazione delle sessioni
-agentiche: verificabile, non opinabile.
-
-### 2. Release automatica su tag (serve in S8)
+### 1. Release automatica su tag
 Quando spingi un tag `v*`, il CI compila e pubblica una GitHub Release con l'APK
 allegato — il tuo canale di distribuzione senza Play Store:
 
@@ -60,11 +46,10 @@ on:
           files: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Le release sono anche la fonte da cui l'app scaricherà gli aggiornamenti della web UI
-(sessione S7) ed eventualmente la lista modelli del Model Hub (backlog): GitHub diventa
-il tuo canale di aggiornamento contenuti, come desideravi.
+Le release possono diventare anche la fonte degli aggiornamenti della web UI e della
+lista modelli del Model Hub (entrambi nel [backlog](backlog.md)).
 
-### 3. Bottone di build manuale
+### 2. Bottone di build manuale
 `workflow_dispatch:` tra i trigger aggiunge un pulsante "Run workflow" nella tab
 Actions: compili qualsiasi branch al volo senza aprire PR. Comodo per esperimenti.
 

@@ -47,4 +47,4 @@ foreach ($targetTokens in $contextSizes) {
     }
 }
 
-Write-Host "Benchmark completato. Riporta i valori nella PR o in docs/project-state.md." -ForegroundColor Cyan
+Write-Host "Benchmark completato. Riporta i valori nella PR o in STATE.md (sezione Misure)." -ForegroundColor Cyan
