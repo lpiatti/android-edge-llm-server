@@ -6,7 +6,7 @@ illimitati** (sui runner standard): usali senza ansia.
 
 ## Cosa hai oggi (verificato in `.github/workflows/android-ci.yml`)
 
-Due job in sequenza:
+Tre job in sequenza:
 1. **bootstrap-verification**: controlla che i file di documentazione obbligatori
    esistano (elenco nel workflow e in `AGENTS.md`). Fallisce il build se un agente
    cancella un file di contratto.
@@ -26,6 +26,14 @@ on:
   pull_request:
     branches: [ main ]
 ```
+
+### 3. publish-dev-apk: APK scaricabile dal telefono
+Dopo ogni build riuscita (PR da questo repo, push su `main`, avvio manuale) la CI sostituisce
+la pre-release `dev-latest` con l'APK **non zippato**. Link fisso, senza login (repo pubblico):
+https://github.com/lpiatti/android-edge-llm-server/releases/download/dev-latest/edge-llm-server-debug.apk
+
+Gli artifact di Actions restano (zip, 7 giorni) ma richiedono l'accesso a GitHub: dal telefono
+danno 404.
 
 ## Upgrade possibili (in ordine di utilità)
 

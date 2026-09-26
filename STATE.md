@@ -28,7 +28,7 @@ Da verificare: CI verde sulla PR #9, poi collaudo su device (Pixel 9, Galaxy S20
 ## Prossimo passo
 
 1. CI verde sulla PR #9 (l'agente corregge finché serve).
-2. Collaudo di Luigi con l'APK della CI: tab TEST → `[ TOOL CALL ]` (atteso 4/4 PASS) e
+2. Collaudo di Luigi con l'APK della CI (link fisso: https://github.com/lpiatti/android-edge-llm-server/releases/download/dev-latest/edge-llm-server-debug.apk): tab TEST → `[ TOOL CALL ]` (atteso 4/4 PASS) e
    `[ BENCHMARK ]` con GPU ON e OFF; incollare le tabelle nella PR.
 3. Con i numeri: aggiornare "Misure" e decidere sul pivot (`docs/api-contract.md` §6).
 
