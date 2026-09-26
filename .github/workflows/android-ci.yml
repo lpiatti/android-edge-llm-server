@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   # Job 1: Verify the repository rules and bootstrap structure are maintained
@@ -24,14 +25,14 @@ jobs:
 
           required_files=(
             "README.md"
+            "STATE.md"
+            "DECISIONI.md"
             "docs/index.md"
-            "docs/project-state.md"
             "docs/roadmap.md"
+            "docs/api-contract.md"
             "docs/architecture.md"
             "AGENTS.md"
             ".agents/README.md"
-            ".agents/bootstrap-phase-0.md"
-            ".agents/create-android-skeleton.md"
             "CLAUDE.md"
             ".claude/README.md"
           )
@@ -76,3 +77,34 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+  # Job 3: Publish the APK (not zipped) as a rolling pre-release with a stable, public link:
+  # https://github.com/<owner>/<repo>/releases/download/dev-latest/edge-llm-server-debug.apk
+  # CI artifacts are always zipped and need a GitHub login, which is impractical on the phone.
+  publish-dev-apk:
+    needs: android-build
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: edge-llm-server-debug-apk
+
+      - name: Replace dev-latest Pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mv app-debug.apk edge-llm-server-debug.apk
+          gh release delete dev-latest --cleanup-tag --yes || true
+          gh release create dev-latest edge-llm-server-debug.apk \
+            --prerelease \
+            --target "$TARGET_SHA" \
+            --title "Dev build (latest CI)" \
+            --notes "Debug APK built by CI from \`$SOURCE_REF\` at commit $TARGET_SHA. Overwritten on every build: not a release."

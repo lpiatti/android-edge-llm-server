@@ -4,7 +4,9 @@ Registro append-only delle decisioni durevoli del progetto. Ci va ciò che il
 diff non spiega: il problema che ha motivato la scelta e l'alternativa scartata.
 
 Lo storico dettagliato delle decisioni architetturali precedenti (ADR 1–14) è
-conservato e consultabile in [`docs/decision-log.md`](docs/decision-log.md).
+archiviato in [`docs/archive/decision-log-adr-1-14.md`](docs/archive/decision-log-adr-1-14.md);
+quelle ancora vigenti sono riassunte nella voce del 2026-09-26.
+Le voci superate non si cancellano: una voce successiva lo dichiara.
 
 ---
 
@@ -27,3 +29,65 @@ conservato e consultabile in [`docs/decision-log.md`](docs/decision-log.md).
 - **Perché:** Il crash `NoSuchMethodError: SendChannel.close$default` su `onDone()` (Issue #2812 / #3334) era dovuto a una discrepanza ABI tra il bytecode dell'AAR 0.16.1 (compilato contro coroutines 1.11.0) e il POM Maven che dichiarava 1.9.0; l'allineamento a 1.11.0 risolve il crash alla radice senza rinunciare ai `SamplerConfig` e ai vantaggi prestazionali della 0.16.1. La gestione esplicita di `cacheDir` previene l'inquinamento della directory modelli con file temporanei pesanti e ne garantisce la pulizia deterministica all'avvio e alla chiusura.
 - **Alternativa scartata:** Rollback a `0.11.0` o `0.13.1` (avrebbe privato il server dei parametri di campionamento dinamico temperatura/topP e del supporto avanzato Gemma 4).
 
+---
+
+## 2026-09-26 — Tag `v1` e riordino documentale (M0)
+- **Decisione:** tag `v1` sul commit `2e73844` (merge PR #8) come primo traguardo. Documentazione ridotta a una fonte per tema: stato solo in `STATE.md`, decisioni solo qui, pianificazione in `docs/roadmap.md` + `docs/backlog.md`, contratto API in `docs/api-contract.md`; cartella `fable5/` sciolta, documenti storici in `docs/archive/`. Elenco dei file obbligatori della CI aggiornato di conseguenza.
+- **Perché:** tre file di stato, due registri decisioni e tre roadmap si contraddicevano (es. `project-state.md` ancora in fase 0, MediaPipe come primo motore, APK < 2.5 MB); attività risultavano chiuse senza evidenza (benchmark di prefill mai registrato, script che non misurava il TTFT).
+- **Alternativa scartata:** ritocchi puntuali ai documenti esistenti mantenendo i file imposti dalla CI. Supera l'"alternativa scartata" della voce 2026-09-05: la CI si adegua alla struttura, non il contrario.
+
+---
+
+## 2026-09-26 — ADR 1–14: sintesi di quelle vigenti
+- **Decisione:** restano in vigore: minSdk 29 / targetSdk 34 (ADR 1); profilo server dedicato su AC e Wi-Fi (ADR 2); UI programmatica Kotlin senza XML/Compose (ADR 3); Foreground Service `specialUse` con wakelock, WifiLock, `START_STICKY`, `BootReceiver` (ADR 4); separazione UI/motore (ADR 5); build solo via GitHub Actions (ADR 6); Ktor CIO (ADR 7, 10); selettore interfaccia di bind (ADR 8); crash catcher in-app (ADR 11); LiteRT-LM motore primario (ADR 12); RequestQueue al posto di SessionManager (ADR 13); licenza PolyForm Noncommercial 1.0.0 (ADR 14). ADR 9 (console di dump HTTP) confluisce nel tab TEST di M7.
+- **Perché:** rendere leggibile in un punto solo ciò che vincola il codice oggi.
+- **Alternativa scartata:** mantenere due registri paralleli (causa delle contraddizioni).
+
+---
+
+## 2026-09-26 — Motivazione di ADR 3 corretta: niente vincolo "APK < 2.5 MB"
+- **Decisione:** la UI resta programmatica senza XML/Compose per riproducibilità di build e controllo, non per la dimensione dell'APK. Il limite "< 2.5 MB" non è più un vincolo; la dimensione reale dell'APK va misurata dall'artifact CI e riportata in `STATE.md`.
+- **Perché:** l'AAR `litertlm-android` include librerie native; il limite è con ogni probabilità già superato e usarlo come argomento contro altre scelte (es. llama.cpp) era fuorviante.
+- **Alternativa scartata:** continuare a citare il limite senza verificarlo.
+
+---
+
+## 2026-09-26 — Motori di inferenza: LiteRT-LM unico, altri solo su bisogno concreto
+- **Decisione:** nessuna generalizzazione multi-motore preventiva. GGUF/llama.cpp passa da "escluso" a primo candidato di backlog, da attivare solo davanti a un bisogno che LiteRT-LM non copre. ONNX Runtime ed ExecuTorch restano candidati per NPU/embeddings. Valutazione in `docs/backlog.md` §2.
+- **Perché:** il rischio tecnico principale (prefill su contesti lunghi) non migliora cambiando motore: la GPU di LiteRT-LM è la via più rapida disponibile sui device di test; la scelta di modelli non-Gemma è già possibile in `.litertlm` (litert-community). Un'interfaccia progettata su un solo caso reale verrebbe sbagliata.
+- **Alternativa scartata:** refactoring del provider per più motori ora; esclusione definitiva di GGUF (motivata da un limite APK non più valido).
+
+---
+
+## 2026-09-26 — Obiettivo e roadmap M0–M7
+- **Decisione:** obiettivo: server con API OpenAI e Ollama compatibili al punto che client reali funzionano senza adattamenti, ottimizzato per la latenza, con UI minimale. "Completo" = matrice di `docs/api-contract.md` §0. Le sessioni Fable 5 S3–S8 confluiscono nei milestone M1–M7; la Web UI (ex S7) passa al backlog. Esclusi da "completo": embeddings, `/v1/completions` legacy, input multimodale, gestione modelli Ollama.
+- **Perché:** il piano a sessioni era parzialmente eseguito senza evidenze e mescolava API, UI web e release; mancava una definizione verificabile di "finito".
+- **Alternativa scartata:** proseguire con S3 così com'era pianificata.
+
+---
+
+## 2026-09-26 — UI Android: cosa si conserva
+- **Decisione:** in M7 si conservano lo stile TUI/terminale, il percorso di avvio dopo l'installazione (onboarding permessi), il caricamento diretto del modello con scelta CPU/GPU e la separazione tra tab ENGINE (motore) e DAEMON (server HTTP). Si riordina il tab TEST come unico punto dei test (benchmark, self-test tool, preset) e si spezza `MainActivity.kt` per tab.
+- **Perché:** sono le parti che il proprietario usa e apprezza; il resto è diventato rumore.
+- **Alternativa scartata:** riprogettazione in 4 tab SERVER/MODELLI/TEST/LOG che fondeva motore e server.
+
+---
+
+## 2026-09-26 — M1–M7 in un'unica PR (#9), un commit per blocco
+- **Decisione:** i milestone M1–M7 vengono sviluppati sul branch `claude/llm-edge-devices-onnx-gguf-75v46c` in un'unica PR, invece di "un milestone = una PR".
+- **Perché:** l'agente può spingere solo su quel branch e il proprietario vuole collaudare un solo APK finale; i test in-app (tab TEST) rendono il collaudo un'unica sessione su device.
+- **Alternativa scartata:** una PR per milestone, con un collaudo su device per ognuna.
+
+---
+
+## 2026-09-26 — Uso dell'API nativa LiteRT-LM 0.16.1 (storico, tool, JSON, riuso KV)
+- **Decisione:** il provider passa lo storico come messaggi nativi (`systemInstruction`, `initialMessages`) invece di un prompt pre-formattato; `PromptBuilder` è rimosso. Tool calling nativo con `automaticToolCalling = false` (il server restituisce le chiamate, non le esegue). `max_tokens` → `maxOutputToken`, JSON → `ResponseFormat` con fallback al solo prompt. Riuso della `Conversation` tra richieste con lo stesso prefisso (M5). La modalità benchmark nativa (`ExperimentalFlags.enableBenchmark`) NON è attivata: cambia impostazioni interne dell'esecutore; TTFT e token/s si misurano lato server e nel test in-app.
+- **Perché:** l'SDK (verificato sui sorgenti del tag `v0.16.1`) offre già tutto ciò che mancava; il prompt pre-formattato veniva probabilmente ri-templatizzato da `Conversation`, e i `tools` venivano scartati.
+- **Alternativa scartata:** parser custom delle chiamate a funzione sull'output testuale (fragile, dipendente dal modello).
+
+---
+
+## 2026-09-26 — Ollama: formato errori e streaming di default
+- **Decisione:** gli endpoint `/api/*` rispondono agli errori con il formato Ollama `{"error": "..."}` e trattano `stream` assente come `true`, come Ollama.
+- **Perché:** i client Ollama (Open WebUI, librerie `ollama`) si aspettano quel formato e quel default; la versione precedente rispondeva non in streaming se `stream` mancava.
+- **Alternativa scartata:** formato errori OpenAI anche su `/api/*` (previsto nella prima stesura del contratto).

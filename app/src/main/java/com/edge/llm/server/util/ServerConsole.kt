@@ -116,6 +116,11 @@ object ServerStats {
     @Volatile var queuedRequests: Int = 0
     @Volatile var lastGenerationSpeedTps: Double = 0.0
     @Volatile var modelLoadTimeMs: Long = 0L
+    /** Time to first token of the last generation (prefill latency), in ms. */
+    @Volatile var lastTtftMs: Long = 0L
+    @Volatile var lastPromptTokens: Int = 0
+    /** Prompt tokens served from a reused KV cache in the last generation. */
+    @Volatile var lastCachedPromptTokens: Int = 0
 
     fun reset() {
         totalRequests = 0
@@ -123,6 +128,9 @@ object ServerStats {
         activeConnections = 0
         queuedRequests = 0
         lastGenerationSpeedTps = 0.0
+        lastTtftMs = 0L
+        lastPromptTokens = 0
+        lastCachedPromptTokens = 0
     }
 }
 

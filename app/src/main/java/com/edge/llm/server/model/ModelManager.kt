@@ -134,6 +134,47 @@ object ModelManager {
     var loadingError: String? = null
         private set
 
+    /** Absolute path and size of the loaded model file (null/0 in mock mode). */
+    @Volatile
+    var activeModelPath: String? = null
+        private set
+
+    @Volatile
+    var activeModelSizeBytes: Long = 0L
+        private set
+
+    @Volatile
+    var activeModelLoadedAt: Long = 0L
+        private set
+
+    /** Context window requested at load time (null = model default). */
+    @Volatile
+    var activeMaxNumTokens: Int? = null
+        private set
+
+    /** Model id exposed by the APIs: file name without the `.litertlm` extension. */
+    val activeModelId: String
+        get() = activeModelName.removeSuffix(".litertlm")
+
+    private const val LOADING_MARKER = "loading.marker"
+
+    /**
+     * Returns a diagnosis if the previous model load never completed (the process was killed
+     * during native initialization, typically out of memory), and clears the marker.
+     */
+    fun consumeStaleLoadingMarker(filesDir: File): String? {
+        val marker = File(filesDir, LOADING_MARKER)
+        if (!marker.exists()) return null
+        val details = try { marker.readText() } catch (e: Exception) { "" }
+        marker.delete()
+        return "The previous model load did not complete: the app was killed during native engine " +
+            "initialization (most likely out of memory).\n$details\n" +
+            "Suggestions: switch to CPU backend, choose a smaller model or context size, run the RAM audit before loading."
+    }
+
+    /** True if a model load is known to have been interrupted by a process kill. */
+    fun hasStaleLoadingMarker(filesDir: File): Boolean = File(filesDir, LOADING_MARKER).exists()
+
     /**
      * Resolves real device physical RAM metrics using ActivityManager.
      */
@@ -451,7 +492,8 @@ object ModelManager {
         modelPath: String?,
         useMock: Boolean,
         useGpu: Boolean = false,
-        cacheDir: String? = null
+        cacheDir: String? = null,
+        maxNumTokens: Int? = null
     ): Boolean = withContext(Dispatchers.IO) {
         isLoading = true
         isGpuActive = false
@@ -471,15 +513,32 @@ object ModelManager {
                 isMockMode = true
                 isModelLoaded = true
                 isGpuActive = false
+                activeModelPath = null
+                activeModelSizeBytes = 0L
+                activeModelLoadedAt = System.currentTimeMillis()
+                activeMaxNumTokens = null
                 ServerConsole.log(LogCategory.ENGINE, "ModelManager: Successfully swapped to Mock Model Mode.")
             } else {
                 if (modelPath.isNullOrEmpty()) {
                     throw IllegalArgumentException("LiteRT-LM requires a valid model file path")
                 }
-                val realProvider = LiteRtLmInferenceProvider(modelPath, useGpu, cacheDir)
-                realProvider.initialize() // Can throw exception if file invalid
+                // Crash marker: if native init kills the process (OOM), the next start can say why.
+                val marker = ServerConsole.logFile?.parentFile?.let { File(it, LOADING_MARKER) }
+                try {
+                    marker?.writeText("Model: ${File(modelPath).name}\nBackend: ${if (useGpu) "GPU" else "CPU"}\nContext: ${maxNumTokens ?: "model default"}\nStarted: ${java.util.Date()}")
+                } catch (e: Exception) {}
+                val realProvider = LiteRtLmInferenceProvider(modelPath, useGpu, cacheDir, maxNumTokens)
+                try {
+                    realProvider.initialize() // Can throw exception if file invalid
+                } finally {
+                    marker?.delete()
+                }
                 activeProvider = realProvider
                 activeModelName = File(modelPath).name
+                activeModelPath = modelPath
+                activeModelSizeBytes = File(modelPath).length()
+                activeModelLoadedAt = System.currentTimeMillis()
+                activeMaxNumTokens = maxNumTokens
                 isMockMode = false
                 isModelLoaded = true
                 isGpuActive = useGpu
@@ -535,6 +594,9 @@ object ModelManager {
             // Revert to non-initialized mock
             activeProvider = MockInferenceProvider()
             activeModelName = "mock-model"
+            activeModelPath = null
+            activeModelSizeBytes = 0L
+            activeMaxNumTokens = null
             isMockMode = true
             isModelLoaded = false
             isLoading = false

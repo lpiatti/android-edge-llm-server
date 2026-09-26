@@ -1,50 +1,78 @@
 param(
     [string]$DeviceIp = "192.168.1.100",
-    [int]$Port = 8080
+    [int]$Port = 8080,
+    [string]$ApiKey = ""
 )
+# Benchmark TTFT (prefill) e velocità di decode via HTTP, in streaming.
+# Stessa misura del pulsante [ BENCHMARK ] nel tab TEST dell'app.
 
+Add-Type -AssemblyName System.Net.Http
 $url = "http://$DeviceIp`:$Port/v1/chat/completions"
+$client = New-Object System.Net.Http.HttpClient
+$client.Timeout = [TimeSpan]::FromMinutes(10)
+if ($ApiKey) { $client.DefaultRequestHeaders.Add("Authorization", "Bearer $ApiKey") }
 
-Write-Host "=== Benchmark Prefill Time-To-First-Token (TTFT) Sessione S1 ===" -ForegroundColor Cyan
-Write-Host "Dispositivo: $url`n" -ForegroundColor Yellow
-
-$contextSizes = @(500, 2000, 4000)
-
-# Blocco di testo ripetibile (~50 token, ~200 caratteri)
-$chunk = "L'architettura edge computing su Android permette di distribuire nodi di inferenza neurale direttamente sulla rete locale, garantendo la totale privacy del dato e operativita continua senza connettivita internet. "
-
-foreach ($targetTokens in $contextSizes) {
-    # Stima caratteri necessari: ~4 caratteri per token
-    $targetChars = $targetTokens * 4
-    $repeats = [Math]::Max(1, [int]($targetChars / $chunk.Length))
-    $syntheticText = ($chunk * $repeats).Substring(0, [Math]::Min($targetChars, ($chunk * $repeats).Length))
-    
-    $payload = @{
-        model = "gemma-4-E2B-it"
-        messages = @(
-            @{ role = "user"; content = "Ecco il documento: $syntheticText`n`nRiassumi brevemente in una riga." }
-        )
-        stream = $false
-    } | ConvertTo-Json -Depth 5
-
-    Write-Host "Test contesto stimato ~ $targetTokens token (payload: $($syntheticText.Length) caratteri)..." -NoNewline
-
-    try {
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $res = Invoke-RestMethod -Uri $url -Method Post -Body $payload -ContentType "application/json"
-        $sw.Stop()
-        $elapsedMs = $sw.ElapsedMilliseconds
-        $promptTokens = $res.usage.prompt_tokens
-        $complTokens = $res.usage.completion_tokens
-
-        Write-Host " OK!" -ForegroundColor Green
-        Write-Host "  Tempo totale: $elapsedMs ms"
-        Write-Host "  Prompt tokens effettivi: $promptTokens | Token completamento: $complTokens"
-        Write-Host "  Velocita stimata prefill: $([Math]::Round($promptTokens / ($elapsedMs / 1000.0), 1)) token/s`n"
-    } catch {
-        Write-Host " FALLITO!" -ForegroundColor Red
-        Write-Host "  Errore: $_`n"
+function New-Document([int]$tokens) {
+    $sb = New-Object System.Text.StringBuilder
+    $i = 1
+    while ($sb.Length -lt $tokens * 4) {
+        [void]$sb.Append("Paragraph ${i}: warehouse $($i*7%13) shipped $($i*37%500) parcels to district $($i*11%29) ")
+        [void]$sb.Append("on day $($i%30+1), with $($i*3%17) late deliveries caused by weather or traffic.`n")
+        $i++
     }
+    $sb.ToString()
 }
 
-Write-Host "Benchmark completato. Riporta i valori nella PR o in docs/project-state.md." -ForegroundColor Cyan
+function Invoke-Stream($messages, [int]$maxTokens) {
+    $body = @{ model = "edge"; messages = $messages; stream = $true; temperature = 0; max_tokens = $maxTokens
+               stream_options = @{ include_usage = $true } } | ConvertTo-Json -Depth 6
+    $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, $url)
+    $req.Content = New-Object System.Net.Http.StringContent($body, [System.Text.Encoding]::UTF8, "application/json")
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+    if (-not $resp.IsSuccessStatusCode) { throw "HTTP $([int]$resp.StatusCode): $($resp.Content.ReadAsStringAsync().Result)" }
+    $reader = New-Object System.IO.StreamReader($resp.Content.ReadAsStreamAsync().Result)
+    $ttft = $null; $text = ""; $usage = $null
+    while (-not $reader.EndOfStream) {
+        $line = $reader.ReadLine()
+        if (-not $line.StartsWith("data:") -or $line -eq "data: [DONE]") { continue }
+        $chunk = $line.Substring(5) | ConvertFrom-Json
+        if ($chunk.error) { throw $chunk.error.message }
+        foreach ($c in $chunk.choices) {
+            if ($c.delta.content) {
+                if ($null -eq $ttft) { $ttft = $sw.ElapsedMilliseconds }
+                $text += $c.delta.content
+            }
+        }
+        if ($chunk.usage) { $usage = $chunk.usage }
+    }
+    $total = $sw.ElapsedMilliseconds
+    if ($null -eq $ttft) { $ttft = $total }
+    $completion = if ($usage) { $usage.completion_tokens } else { 0 }
+    $tps = if ($completion -gt 1 -and $total -gt $ttft) { ($completion - 1) * 1000.0 / ($total - $ttft) } else { 0 }
+    $cached = if ($usage -and $usage.prompt_tokens_details) { $usage.prompt_tokens_details.cached_tokens } else { 0 }
+    [pscustomobject]@{ Text = $text; Prompt = $usage.prompt_tokens; Cached = $cached; Ttft = $ttft; Tps = [Math]::Round($tps, 1) }
+}
+
+Write-Host "Target: $url`n"
+Write-Host "| Prompt | Prompt tok | Cached tok | TTFT ms | Decode tok/s |`n|---|---|---|---|---|"
+$last = $null
+foreach ($target in @(500, 2000, 4000)) {
+    $msgs = @(@{ role = "user"; content = (New-Document $target) + "`nIn one sentence, what is this document about?" })
+    try {
+        $r = Invoke-Stream $msgs 48
+        Write-Host "| ~$target cold | $($r.Prompt) | $($r.Cached) | $($r.Ttft) | $($r.Tps) |"
+        $last = @{ Target = $target; Messages = $msgs; Text = $r.Text }
+    } catch {
+        Write-Host "| ~$target cold | FAIL: $_ |"
+    }
+}
+if ($last) {
+    $msgs = $last.Messages + @(
+        @{ role = "assistant"; content = $last.Text },
+        @{ role = "user"; content = "How many parcels did paragraph 2 mention? Answer with the number only." })
+    $r = Invoke-Stream $msgs 16
+    Write-Host "| ~$($last.Target) + follow-up (warm) | $($r.Prompt) | $($r.Cached) | $($r.Ttft) | $($r.Tps) |"
+    Write-Host "`nFollow-up answer (expected 74): $($r.Text.Trim())"
+}
+Write-Host "`nRiporta la tabella in STATE.md (sezione Misure)." -ForegroundColor Cyan
