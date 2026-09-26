@@ -71,3 +71,23 @@ Le voci superate non si cancellano: una voce successiva lo dichiara.
 - **Perché:** sono le parti che il proprietario usa e apprezza; il resto è diventato rumore.
 - **Alternativa scartata:** riprogettazione in 4 tab SERVER/MODELLI/TEST/LOG che fondeva motore e server.
 
+---
+
+## 2026-09-26 — M1–M7 in un'unica PR (#9), un commit per blocco
+- **Decisione:** i milestone M1–M7 vengono sviluppati sul branch `claude/llm-edge-devices-onnx-gguf-75v46c` in un'unica PR, invece di "un milestone = una PR".
+- **Perché:** l'agente può spingere solo su quel branch e il proprietario vuole collaudare un solo APK finale; i test in-app (tab TEST) rendono il collaudo un'unica sessione su device.
+- **Alternativa scartata:** una PR per milestone, con un collaudo su device per ognuna.
+
+---
+
+## 2026-09-26 — Uso dell'API nativa LiteRT-LM 0.16.1 (storico, tool, JSON, riuso KV)
+- **Decisione:** il provider passa lo storico come messaggi nativi (`systemInstruction`, `initialMessages`) invece di un prompt pre-formattato; `PromptBuilder` è rimosso. Tool calling nativo con `automaticToolCalling = false` (il server restituisce le chiamate, non le esegue). `max_tokens` → `maxOutputToken`, JSON → `ResponseFormat` con fallback al solo prompt. Riuso della `Conversation` tra richieste con lo stesso prefisso (M5). La modalità benchmark nativa (`ExperimentalFlags.enableBenchmark`) NON è attivata: cambia impostazioni interne dell'esecutore; TTFT e token/s si misurano lato server e nel test in-app.
+- **Perché:** l'SDK (verificato sui sorgenti del tag `v0.16.1`) offre già tutto ciò che mancava; il prompt pre-formattato veniva probabilmente ri-templatizzato da `Conversation`, e i `tools` venivano scartati.
+- **Alternativa scartata:** parser custom delle chiamate a funzione sull'output testuale (fragile, dipendente dal modello).
+
+---
+
+## 2026-09-26 — Ollama: formato errori e streaming di default
+- **Decisione:** gli endpoint `/api/*` rispondono agli errori con il formato Ollama `{"error": "..."}` e trattano `stream` assente come `true`, come Ollama.
+- **Perché:** i client Ollama (Open WebUI, librerie `ollama`) si aspettano quel formato e quel default; la versione precedente rispondeva non in streaming se `stream` mancava.
+- **Alternativa scartata:** formato errori OpenAI anche su `/api/*` (previsto nella prima stesura del contratto).

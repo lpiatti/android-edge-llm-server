@@ -11,48 +11,47 @@ server written by the same hands can agree on the same mistake.
 
 ## 0. Compatibility matrix
 
-Status legend: ✅ done · 🟡 partial · ❌ missing · ⛔ out of scope (see §9).
-Status verified against code at tag `v1`.
+Legend: ✅ verified on device · 🔬 implemented + JVM-tested, device check pending (TEST tab) ·
+❌ missing · ⛔ out of scope (see §9). Status as of the `v2` work (PR #9).
 
 ### OpenAI
 
-| Endpoint / field | Status | Milestone | Notes |
-|---|---|---|---|
-| `GET /v1/models` | ✅ | — | Returns the active model. |
-| `POST /v1/chat/completions` — `messages` full history | ✅ | — | `PromptBuilder` (Gemma template). |
-| — `stream` (SSE, `[DONE]`) | ✅ | — | |
-| — `temperature`, `top_p` | ✅ | — | Via `SamplerConfig`. |
-| — `max_tokens` / `max_completion_tokens` | ❌ | M2 | `max_tokens` is parsed but silently ignored by `LiteRtLmInferenceProvider`; `max_completion_tokens` not parsed. Same for Ollama `num_predict`. |
-| — `content` as array of parts (`[{type:"text",text}]`) | ❌ | M2 | Declared as `String`: modern clients fail deserialization. |
-| — `stop` | ❌ | M2 | |
-| — `usage` (prompt/completion tokens) | 🟡 | M2 | Must be engine counts or a consistent estimate. |
-| — `stream_options.include_usage` | ❌ | M2 | Final usage chunk. |
-| — `response_format: {type:"json_object"}` | ❌ | M2 | Best effort via prompt; document the limit. |
-| — `tools`, `tool_choice`, `tool_calls`, `role:"tool"` | ❌ | M4 | See §3. Today `tools` is silently dropped (`ignoreUnknownKeys`). |
-| — `n > 1`, `logprobs`, `seed` | ⛔ | — | Reject `n>1` with 400; ignore others with a log warning. |
-| Error format (§7) | 🟡 | M2 | Verify every error path. |
-| Auth (§5) | ❌ | M6 | |
+| Endpoint / field | Status | Notes |
+|---|---|---|
+| `GET /v1/models`, `GET /v1/models/{id}` | 🔬 | Active model id = file name without `.litertlm`. |
+| `POST /v1/chat/completions` — full history | 🔬 | Native LiteRT-LM history (`initialMessages`), template applied once. |
+| — `stream` (SSE, `[DONE]`) | 🔬 | First delta carries `role`; mid-stream error → `error` event, then `[DONE]`. |
+| — `temperature`, `top_p`, `seed` | 🔬 | `SamplerConfig`; missing values default to top_k 64, top_p 0.95, temperature 1.0. |
+| — `max_tokens` / `max_completion_tokens` | 🔬 | Native `maxOutputToken`; `finish_reason:"length"` when reached. |
+| — `content` as array of text parts | 🔬 | Non-text parts → 400. |
+| — `stop` (string or array) | 🔬 | Enforced server-side, streaming-safe; native decoding is cancelled. |
+| — `usage` + `prompt_tokens_details.cached_tokens` | 🔬 | Engine token count; cached = tokens served by KV reuse (M5). |
+| — `stream_options.include_usage` | 🔬 | Final chunk with empty `choices` and `usage`. |
+| — `response_format` `json_object` / `json_schema` | 🔬 | Native constrained decoding + system hint; falls back to hint only if the model rejects it. |
+| — `tools`, `tool_choice`, `tool_calls`, `role:"tool"` | 🔬 | Native LiteRT-LM tool calling, `automaticToolCalling=false`; stream and non-stream. |
+| — `n > 1` | ⛔ | 400. `logprobs` ignored. |
+| Error format (§7) | 🔬 | |
+| Auth (§5) | 🔬 | |
+| `/v1/embeddings`, `/v1/completions` | ⛔ | 501. |
 
 ### Ollama
 
-| Endpoint / field | Status | Milestone | Notes |
-|---|---|---|---|
-| `GET /api/tags` | 🟡 | M3 | Lists the active model, but `size`, `digest`, `modified_at` are mock constants. |
-| `POST /api/chat` full history + NDJSON stream | ✅ | — | |
-| — `options.temperature`, `top_p` | ✅ | — | `num_predict`: see `max_tokens` row above. |
-| — `options.stop`, `num_ctx` | ❌ | M3 | `num_ctx` accepted and logged if engine can't honor it. |
-| — `tools` / `message.tool_calls` | ❌ | M4 | |
-| `GET /api/version` | ❌ | M3 | Open WebUI probes it to detect Ollama. |
-| `POST /api/show` | ❌ | M3 | Minimal valid metadata (family, parameter size, template, capabilities). |
-| `POST /api/generate` | ❌ | M3 | Prompt-style, stream + non-stream. |
-| `GET /api/ps` | ❌ | M3 | Loaded model + size. |
-| `pull`, `push`, `create`, `copy`, `delete` | ⛔ | — | Return 501 with a clear message. |
+| Endpoint / field | Status | Notes |
+|---|---|---|
+| `GET /`, `GET /api/version` | 🔬 | `"Ollama is running"`; version = app version. |
+| `GET /api/tags`, `GET /api/ps` | 🔬 | Real size and file date; digest is an identity hash, not a content hash. |
+| `POST /api/show` | 🔬 | Family/size guessed from the file name; capabilities `completion`, `tools`. |
+| `POST /api/chat` — history, NDJSON stream (default `stream:true`) | 🔬 | Final line carries `done_reason`, counts and durations (ns). |
+| — `options.temperature/top_p/top_k/num_predict/stop/seed`, `format` | 🔬 | `num_ctx` ignored: context size is set at load time (ENGINE tab, CTX). |
+| — `tools` / `message.tool_calls` / `role:"tool"` (+`tool_name`) | 🔬 | Arguments as JSON objects. |
+| `POST /api/generate` | 🔬 | `system` + `prompt`; empty prompt = load check. |
+| `pull`, `push`, `create`, `copy`, `delete`, `embed(dings)` | ⛔ | 501. |
 
 ### Service endpoints
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `GET /health` | ✅ | Always unauthenticated. |
+| `GET /health` | 🔬 | Always unauthenticated; reports model and `auth_required`. |
 
 ## 1. Statelessness (fundamental)
 
@@ -61,6 +60,10 @@ Status verified against code at tag `v1`.
 - No server-side sessions. Consequence: every request re-prefills the whole context.
   This cost is measured (M1) and reduced transparently by prefix/KV reuse (M5) — an
   optimization that must never change the stateless semantics.
+- Reuse rule (M5): the conversation of the last successful request stays alive. It is reused
+  only if the new request has the same system prompt, tools, sampling and JSON mode, and its
+  history equals the cached history (assistant text compared trimmed, tool arguments compared
+  as JSON). Any difference, a cancellation or an error → a fresh conversation.
 
 ## 2. POST /v1/chat/completions
 
@@ -72,10 +75,10 @@ Status verified against code at tag `v1`.
 | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `stop` | Pass to engine if supported; otherwise enforce server-side (`stop`, token cap) or log a warning. Never pretend silently. |
 | `tools`, `tool_choice` | §3. |
 
-Prompt assembly: apply the active model's chat template exactly once. **Open question
-(M2):** the provider passes an already Gemma-templated string to LiteRT-LM
-`Conversation.sendMessageAsync`, which may apply its own template again. Verify and fix
-(feed native messages if the SDK supports it).
+Prompt assembly: the model's own chat template, applied exactly once by LiteRT-LM from
+native messages (system → `systemInstruction`, history → `initialMessages`, last user
+message or trailing tool results → the sent message). The previous string-template
+approach (`PromptBuilder`, removed) risked double templating.
 
 ## 3. Tool calling
 
@@ -86,16 +89,18 @@ Prompt assembly: apply the active model's chat template exactly once. **Open que
 - The server NEVER executes tools (phone-side tools are backlog, see [backlog.md](backlog.md)).
 
 **Model layer:**
-- Preferred: LiteRT-LM native function-calling API for Gemma 4, if exposed (verify first in M4).
-- Fallback: inject tool definitions using the model's documented format, parse the output;
-  well-formed call → `tool_calls`, otherwise plain content.
-- Parser rules: malformed JSON → content (never 500), multiple calls supported, `id` = `call_<uuid>`.
-- Streaming: emit `tool_calls` deltas per OpenAI spec (M4, second step).
+- LiteRT-LM 0.16.1 exposes native tool calling: tools are declared as `OpenApiTool`s in
+  `ConversationConfig` with `automaticToolCalling = false`, so the SDK returns the model's
+  calls instead of executing them. Tool results go back as `Content.ToolResponse`.
+- Multiple calls supported; `id` = `call_<random>`; OpenAI `tool_call_id` is resolved to the
+  function name from the preceding assistant message.
+- Streaming: each call is emitted as one `tool_calls` delta (complete arguments), then
+  `finish_reason:"tool_calls"`.
 
 ## 4. Concurrency
 
 - Exactly ONE inference at a time. FIFO queue, depth 4, timeout 120 s (`RequestQueue`, done).
-- Queue full or timeout → HTTP 429, OpenAI-style body, `Retry-After`.
+- Queue full or timeout → HTTP 429 with `Retry-After`.
 - Streaming requests hold the worker until the stream completes.
 
 ## 5. Authentication
@@ -117,8 +122,9 @@ agent-harness use is declared impractical and M4 is re-prioritized (decision in 
 
 ## 7. Error format
 
-OpenAI-style everywhere, Ollama endpoints included:
-`{"error": {"message": "...", "type": "invalid_request_error" | "server_error" | "rate_limit_exceeded" | "authentication_error", "code": null}}`.
+OpenAI endpoints: `{"error": {"message": "...", "type": "invalid_request_error" | "server_error" | "rate_limit_exceeded" | "authentication_error"}}`.
+Ollama endpoints: Ollama's own `{"error": "..."}` (what Ollama clients parse).
+Status codes: 400 invalid request, 401 auth, 429 queue, 501 unsupported, 503 no model, 500 engine failure.
 Never leak stack traces to HTTP responses; they go to ServerConsole/crash log.
 
 ## 8. Test surface

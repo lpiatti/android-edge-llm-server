@@ -23,6 +23,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.edge.llm.server.api.ApiKeyStore
+import com.edge.llm.server.model.FeasibilityLevel
 import com.edge.llm.server.model.ModelManager
 import com.edge.llm.server.service.LlmServerService
 import com.edge.llm.server.util.LogCategory
@@ -107,7 +109,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var quickShellStatusTv: TextView
     private lateinit var quickShellResponseTv: TextView
 
-    private lateinit var presetS1Btn: Button
+    private lateinit var benchmarkBtn: Button
+    private lateinit var toolTestBtn: Button
+    private lateinit var ctxPill: Button
+    private lateinit var apiKeyInput: EditText
+    private lateinit var apiKeyStatusTv: TextView
+    private var selectedMaxNumTokens = 0 // 0 = model default
     private lateinit var presetStreamBtn: Button
     private lateinit var presetS2QueueBtn: Button
     private lateinit var presetHealthBtn: Button
@@ -272,6 +279,15 @@ class MainActivity : AppCompatActivity() {
 
         // Evaluate crash diagnostics threshold
         val crashFile = File(filesDir, "crash_log.txt")
+
+        // A model load that never completed means native init killed the process (M6 crash marker)
+        ModelManager.consumeStaleLoadingMarker(filesDir)?.let { diagnosis ->
+            try {
+                crashFile.writeText("⚠️ MODEL LOAD INTERRUPTED - ${java.util.Date()}\nDevice: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})\n\n$diagnosis\n")
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
         
         // Check SharedPreferences for dirty shutdown (native crash / LMK)
         val prefs = getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE)
@@ -743,6 +759,51 @@ class MainActivity : AppCompatActivity() {
         val bindingInterface = prefs.getString("selected_interface", "All") ?: "All"
         selectedBindingInterface = "" // Force update
         setInterfaceBinding(bindingInterface)
+
+        // 5. Context window and API key
+        selectedMaxNumTokens = prefs.getInt("max_num_tokens", 0)
+        updateCtxPill()
+        ApiKeyStore.apiKey = prefs.getString("api_key", null)?.trim()?.ifEmpty { null }
+        if (::apiKeyInput.isInitialized) apiKeyInput.setText(ApiKeyStore.apiKey ?: "")
+        updateApiKeyStatus()
+    }
+
+    private val ctxOptions = listOf(0, 4096, 8192, 16384, 32768)
+
+    private fun cycleCtx() {
+        val idx = ctxOptions.indexOf(selectedMaxNumTokens).let { if (it < 0) 0 else it }
+        selectedMaxNumTokens = ctxOptions[(idx + 1) % ctxOptions.size]
+        getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE).edit().putInt("max_num_tokens", selectedMaxNumTokens).apply()
+        updateCtxPill()
+        ServerConsole.log(LogCategory.UI, "Engine Setup: context window set to ${if (selectedMaxNumTokens == 0) "model default" else selectedMaxNumTokens} (applies on next load).")
+    }
+
+    private fun updateCtxPill() {
+        if (!::ctxPill.isInitialized) return
+        ctxPill.text = if (selectedMaxNumTokens == 0) "[ CTX: AUTO ]" else "[ CTX: ${selectedMaxNumTokens / 1024}K ]"
+    }
+
+    private fun saveApiKey() {
+        val key = apiKeyInput.text.toString().trim().ifEmpty { null }
+        ApiKeyStore.apiKey = key
+        getSharedPreferences("llm_server_prefs", Context.MODE_PRIVATE).edit().putString("api_key", key).apply()
+        updateApiKeyStatus()
+        ServerConsole.log(LogCategory.UI, "API key ${if (key == null) "removed: open LAN access" else "set: clients must send 'Authorization: Bearer <key>'"}.")
+    }
+
+    private fun updateApiKeyStatus() {
+        if (!::apiKeyStatusTv.isInitialized) return
+        if (ApiKeyStore.isEnabled) {
+            apiKeyStatusTv.text = "API KEY: ON — clients must send 'Authorization: Bearer <key>'"
+            apiKeyStatusTv.setTextColor(Color.parseColor("#00FF66"))
+        } else {
+            apiKeyStatusTv.text = "API KEY: OFF — open access for anyone on this network"
+            apiKeyStatusTv.setTextColor(Color.parseColor("#FF8800"))
+        }
+    }
+
+    private fun applyAuth(conn: HttpURLConnection) {
+        ApiKeyStore.apiKey?.takeIf { it.isNotBlank() }?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
     }
 
     private fun switchTab(index: Int) {
@@ -807,7 +868,7 @@ class MainActivity : AppCompatActivity() {
         statsRequestsText.text = "${stats.totalRequests} (Active: ${stats.activeConnections})"
 
         if (::statsQueueText.isInitialized) {
-            val qCount = stats.queuedRequests
+            val qCount = LlmServerService.activeRequestQueue?.queuedRequestsCount ?: 0
             statsQueueText.text = "$qCount / 4 Slots"
             statsQueueText.setTextColor(
                 when {
@@ -818,7 +879,10 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        statsSpeedText.text = if (stats.lastGenerationSpeedTps > 0) "%.1f tok/s".format(stats.lastGenerationSpeedTps) else "0.0 tok/s"
+        statsSpeedText.text = if (stats.lastGenerationSpeedTps > 0) {
+            val cached = if (stats.lastCachedPromptTokens > 0) ", ${stats.lastCachedPromptTokens} cached" else ""
+            "%.1f tok/s | TTFT %d ms (%d prompt tok%s)".format(stats.lastGenerationSpeedTps, stats.lastTtftMs, stats.lastPromptTokens, cached)
+        } else "0.0 tok/s"
         statsTokensText.text = "${stats.totalTokensGenerated} tokens"
         statsLoadTimeText.text = if (stats.modelLoadTimeMs > 0) "%.2f s".format(stats.modelLoadTimeMs / 1000.0) else "N/A"
     }
@@ -910,6 +974,20 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { setHardwareBackend(true) }
         }
         backendSelectorRow.addView(gpuModelPill)
+
+        ctxPill = Button(this).apply {
+            text = "[ CTX: AUTO ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(8, 0, 0, 0)
+            }
+            layoutParams = params
+            setOnClickListener { cycleCtx() }
+        }
+        backendSelectorRow.addView(ctxPill)
         modelContainer.addView(backendSelectorRow)
 
         // Native SAF file picker card
@@ -1386,14 +1464,31 @@ class MainActivity : AppCompatActivity() {
         gpuModelPill.setTextColor(Color.parseColor(if (isGpu) "#FFFFFF" else "#888888"))
     }
 
-    private fun initializeEngine() {
+    private fun initializeEngine(force: Boolean = false) {
         val isMock = isMockEngineSelected
         val isGpu = isGpuSelected
+        val maxNumTokens = selectedMaxNumTokens.takeIf { it > 0 }
         var path: String? = null
         if (!isMock) {
             path = selectedModelPath
             if (path == null) {
                 ServerConsole.log(LogCategory.UI, "Engine Setup: Failed to initialize. No model selected.")
+                return
+            }
+            // Pre-flight RAM check (M6): refuse loads that will almost surely be OOM-killed, unless forced.
+            val audit = ModelManager.auditModelFeasibility(this, File(path))
+            if (!force && audit.level == FeasibilityLevel.CRITICAL_OOM_RISK) {
+                ServerConsole.log(LogCategory.UI, "Engine Setup: pre-flight refused load (${audit.estimatedPeakAllocationMb} MB needed, ${audit.currentAvailRamMb} MB free).")
+                AlertDialog.Builder(this)
+                    .setTitle("Not enough free RAM")
+                    .setMessage(
+                        "${audit.modelFileName} needs about ${audit.estimatedPeakAllocationMb} MB at peak, " +
+                            "only ${audit.currentAvailRamMb} MB are free.\n\n${audit.recommendation}\n\n" +
+                            "Loading anyway may crash the app; the next start will explain what happened."
+                    )
+                    .setPositiveButton("Force load") { _, _ -> initializeEngine(force = true) }
+                    .setNegativeButton("Cancel", null)
+                    .show()
                 return
             }
         }
@@ -1405,7 +1500,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 kotlinx.coroutines.runBlocking {
                     val cacheDir = ModelManager.getPrivateCacheDirectory(this@MainActivity).absolutePath
-                    ModelManager.loadModel(path, isMock, isGpu, cacheDir)
+                    ModelManager.loadModel(path, isMock, isGpu, cacheDir, maxNumTokens)
                 }
                 runOnUiThread {
                     ServerConsole.log(LogCategory.UI, "Engine Setup: Model loaded successfully.")
@@ -1610,6 +1705,43 @@ class MainActivity : AppCompatActivity() {
         }
         bindRow.addView(mobilePill)
         serverContainer.addView(bindRow)
+
+        // Optional API key (M6)
+        apiKeyStatusTv = TextView(this).apply {
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 8, 0, 6)
+        }
+        serverContainer.addView(apiKeyStatusTv)
+        val apiKeyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 16)
+        }
+        apiKeyInput = EditText(this).apply {
+            hint = "API key (empty = open access)"
+            setHintTextColor(Color.parseColor("#555555"))
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            isSingleLine = true
+            setPadding(12, 8, 12, 8)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+        }
+        apiKeyRow.addView(apiKeyInput)
+        apiKeyRow.addView(Button(this).apply {
+            text = "[ SAVE KEY ]"
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            setOnClickListener { saveApiKey() }
+        })
+        serverContainer.addView(apiKeyRow)
+        updateApiKeyStatus()
 
         // Live Daemon Telemetry Card
         val statsCard = LinearLayout(this).apply {
@@ -1937,16 +2069,36 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        presetS1Btn = Button(this).apply {
-            text = "[ S1 RECALL ]"
-            setTextColor(Color.parseColor("#CCCCCC"))
+        // Milestone tests: prefill/decode benchmark and tool-calling round trip
+        val milestoneRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 8)
+            }
+            layoutParams = params
+        }
+        benchmarkBtn = Button(this).apply {
+            text = "[ BENCHMARK ]"
+            setTextColor(Color.parseColor("#00FF66"))
             setBackgroundColor(Color.parseColor("#222222"))
             textSize = 9f
             typeface = Typeface.MONOSPACE
             layoutParams = pillWeightParams()
-            setOnClickListener { executePresetS1Recall() }
+            setOnClickListener { executeBenchmark() }
         }
-        presetRow.addView(presetS1Btn)
+        milestoneRow.addView(benchmarkBtn)
+        toolTestBtn = Button(this).apply {
+            text = "[ TOOL CALL ]"
+            setTextColor(Color.parseColor("#00FF66"))
+            setBackgroundColor(Color.parseColor("#222222"))
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            setOnClickListener { executeToolSelfTest() }
+        }
+        milestoneRow.addView(toolTestBtn)
+        testContainer.addView(milestoneRow)
+
 
         presetStreamBtn = Button(this).apply {
             text = "[ STREAM ]"
@@ -1960,7 +2112,7 @@ class MainActivity : AppCompatActivity() {
         presetRow.addView(presetStreamBtn)
 
         presetS2QueueBtn = Button(this).apply {
-            text = "[ S2 QUEUE ]"
+            text = "[ QUEUE ]"
             setTextColor(Color.parseColor("#00FF66"))
             setBackgroundColor(Color.parseColor("#222222"))
             textSize = 9f
@@ -2376,28 +2528,295 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun executePresetS1Recall() {
-        val jsonBody = """
-            {
-              "model": "edge-model",
-              "messages": [
-                {"role": "user", "content": "My secret code is ALPHA-77. Remember it."},
-                {"role": "assistant", "content": "Understood. Your secret code is ALPHA-77."},
-                {"role": "user", "content": "What is my secret code?"}
-              ],
-              "temperature": 0.2,
-              "stream": false
-            }
-        """.trimIndent()
+    // --- MILESTONE TESTS (M1 benchmark, M4 tool calling) ---
 
-        executeHttpCall(
-            method = "POST",
-            path = "/v1/chat/completions",
-            body = jsonBody,
-            isStream = false,
-            triggerButton = presetS1Btn,
-            buttonDefaultText = "[ S1 RECALL ]"
+    private data class BenchResult(
+        val ok: Boolean,
+        val code: Int,
+        val ttftMs: Long,
+        val totalMs: Long,
+        val promptTokens: Int,
+        val completionTokens: Int,
+        val cachedTokens: Int,
+        val text: String,
+        val error: String?
+    ) {
+        val decodeTps: Double
+            get() {
+                val decodeMs = totalMs - ttftMs
+                return if (decodeMs > 0 && completionTokens > 1) (completionTokens - 1) * 1000.0 / decodeMs else 0.0
+            }
+    }
+
+    private fun testHost(): String =
+        if (LlmServerService.activeBindHost == "0.0.0.0") "localhost" else LlmServerService.activeBindHost
+
+    private fun appendTest(text: String) {
+        runOnUiThread { testConsole.append(text) }
+    }
+
+    private fun canRunMilestoneTest(): Boolean {
+        if (!LlmServerService.isServiceRunning) {
+            Toast.makeText(this, "HTTP Server is offline: start it in the DAEMON tab", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        if (!ModelManager.isModelLoaded) {
+            Toast.makeText(this, "No model loaded: load one in the ENGINE tab", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        return true
+    }
+
+    /** Synthetic document of roughly [tokens] tokens (~4 characters per token). */
+    private fun syntheticDocument(tokens: Int): String {
+        val sb = StringBuilder()
+        var i = 1
+        while (sb.length < tokens * 4) {
+            sb.append("Paragraph $i: warehouse ${i * 7 % 13} shipped ${i * 37 % 500} parcels to district ${i * 11 % 29} ")
+            sb.append("on day ${i % 30 + 1}, with ${i * 3 % 17} late deliveries caused by weather or traffic.\n")
+            i++
+        }
+        return sb.toString()
+    }
+
+    private fun postJson(path: String, body: String, timeoutMs: Int = 300_000): Pair<Int, String> {
+        val conn = URL("http://${testHost()}:8080$path").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 5000
+        conn.readTimeout = timeoutMs
+        conn.setRequestProperty("Content-Type", "application/json")
+        applyAuth(conn)
+        conn.doOutput = true
+        val bytes = body.toByteArray(StandardCharsets.UTF_8)
+        conn.setFixedLengthStreamingMode(bytes.size)
+        conn.outputStream.use { it.write(bytes) }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
+        return code to text
+    }
+
+    /** Streams one chat completion and measures time to first content token on the client side. */
+    private fun streamChat(messages: org.json.JSONArray, maxTokens: Int): BenchResult {
+        val body = JSONObject()
+            .put("model", ModelManager.activeModelId)
+            .put("messages", messages)
+            .put("stream", true)
+            .put("stream_options", JSONObject().put("include_usage", true))
+            .put("temperature", 0)
+            .put("max_tokens", maxTokens)
+            .toString()
+        val start = System.currentTimeMillis()
+        var ttft = -1L
+        val text = StringBuilder()
+        var prompt = 0
+        var completion = 0
+        var cached = 0
+        var error: String? = null
+        var code = -1
+        try {
+            val conn = URL("http://${testHost()}:8080/v1/chat/completions").openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 300_000
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Accept", "text/event-stream")
+            applyAuth(conn)
+            conn.doOutput = true
+            val bytes = body.toByteArray(StandardCharsets.UTF_8)
+            conn.setFixedLengthStreamingMode(bytes.size)
+            conn.outputStream.use { it.write(bytes) }
+            code = conn.responseCode
+            if (code !in 200..299) {
+                error = conn.errorStream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: "HTTP $code"
+            } else {
+                conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader ->
+                    var line = reader.readLine()
+                    while (line != null) {
+                        val data = line.removePrefix("data:").trim()
+                        if (line.startsWith("data:") && data != "[DONE]" && data.isNotEmpty()) {
+                            val json = JSONObject(data)
+                            if (json.has("error")) error = json.optJSONObject("error")?.optString("message") ?: data
+                            val choices = json.optJSONArray("choices")
+                            if (choices != null && choices.length() > 0) {
+                                val content = choices.getJSONObject(0).optJSONObject("delta")?.optString("content", "") ?: ""
+                                if (content.isNotEmpty()) {
+                                    if (ttft < 0) ttft = System.currentTimeMillis() - start
+                                    text.append(content)
+                                }
+                            }
+                            json.optJSONObject("usage")?.let { u ->
+                                prompt = u.optInt("prompt_tokens")
+                                completion = u.optInt("completion_tokens")
+                                cached = u.optJSONObject("prompt_tokens_details")?.optInt("cached_tokens") ?: 0
+                            }
+                        }
+                        line = reader.readLine()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            error = e.message ?: e.toString()
+        }
+        val total = System.currentTimeMillis() - start
+        return BenchResult(
+            ok = error == null && code in 200..299,
+            code = code,
+            ttftMs = if (ttft < 0) total else ttft,
+            totalMs = total,
+            promptTokens = prompt,
+            completionTokens = completion,
+            cachedTokens = cached,
+            text = text.toString(),
+            error = error
         )
+    }
+
+    private fun benchRow(label: String, r: BenchResult): String =
+        if (r.ok) "| $label | ${r.promptTokens} | ${r.cachedTokens} | ${r.ttftMs} | ${"%.1f".format(r.decodeTps)} | OK |\n"
+        else "| $label | - | - | - | - | FAIL: ${(r.error ?: "HTTP ${r.code}").take(120).replace("\n", " ")} |\n"
+
+    private fun executeBenchmark() {
+        if (!canRunMilestoneTest()) return
+        benchmarkBtn.setVisualEnabled(false)
+        benchmarkBtn.text = "Running..."
+        val backend = when {
+            ModelManager.isMockMode -> "MOCK"
+            ModelManager.isGpuActive -> "GPU"
+            else -> "CPU"
+        }
+        testConsole.setText(
+            ">>> BENCHMARK: time to first token (prefill) and decode speed, measured over HTTP.\n" +
+                "Device: ${Build.MANUFACTURER} ${Build.MODEL} | Model: ${ModelManager.activeModelId} | Backend: $backend | Ctx: ${ModelManager.activeMaxNumTokens ?: "auto"}\n\n" +
+                "| Prompt | Prompt tok | Cached tok | TTFT ms | Decode tok/s | Result |\n|---|---|---|---|---|---|\n"
+        )
+        Thread {
+            var warmBase: org.json.JSONArray? = null
+            var warmAnswer = ""
+            var warmSize = 0
+            for (target in listOf(500, 2000, 4000)) {
+                val messages = org.json.JSONArray().put(
+                    JSONObject().put("role", "user").put(
+                        "content",
+                        syntheticDocument(target) + "\nIn one sentence, what is this document about?"
+                    )
+                )
+                val r = streamChat(messages, maxTokens = 48)
+                appendTest(benchRow("~$target cold", r))
+                if (r.ok) {
+                    warmBase = messages
+                    warmAnswer = r.text
+                    warmSize = target
+                }
+            }
+            // Warm turn: same history + follow-up. With prefix reuse (M5) only the new turn is prefilled.
+            warmBase?.let { msgs ->
+                msgs.put(JSONObject().put("role", "assistant").put("content", warmAnswer))
+                msgs.put(JSONObject().put("role", "user").put("content", "How many parcels did paragraph 2 mention? Answer with the number only."))
+                val r = streamChat(msgs, maxTokens = 16)
+                appendTest(benchRow("~$warmSize + follow-up (warm)", r))
+                if (r.ok) appendTest("\nFollow-up answer (expected 74): ${r.text.trim().take(80)}\n")
+            }
+            appendTest(
+                "\nTTFT includes HTTP and queue overhead. 'Cached tok' > 0 on the warm row means the KV cache was reused.\n" +
+                    "Copy this table into the PR / STATE.md. Run again with the other backend (ENGINE tab).\n"
+            )
+            runOnUiThread {
+                benchmarkBtn.setVisualEnabled(true)
+                benchmarkBtn.text = "[ BENCHMARK ]"
+            }
+        }.start()
+    }
+
+    /** Real, read-only phone tool executed by the app acting as a client (never by the server). */
+    private fun batteryStatusJson(): String {
+        val intent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
+        val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+        return JSONObject().put("battery_percent", pct).put("charging", charging).toString()
+    }
+
+    private fun executeToolSelfTest() {
+        if (!canRunMilestoneTest()) return
+        toolTestBtn.setVisualEnabled(false)
+        toolTestBtn.text = "Running..."
+        testConsole.setText(">>> TOOL CALL SELF-TEST: the model must request 'get_battery_status'; the app (as client) executes it and sends the result back.\n\n")
+        Thread {
+            var passed = 0
+            var total = 0
+            fun check(name: String, ok: Boolean, detail: String) {
+                total++
+                if (ok) passed++
+                appendTest("${if (ok) "[PASS]" else "[FAIL]"} $name — $detail\n")
+            }
+            val toolsJson = """[{"type":"function","function":{"name":"get_battery_status","description":"Returns the current battery level of this phone in percent and whether it is charging.","parameters":{"type":"object","properties":{}}}}]"""
+            val question = "What is the battery level of this phone right now? Use the available tool."
+            try {
+                // 1. OpenAI, non-streaming: expect a structured tool call
+                val messages = org.json.JSONArray().put(JSONObject().put("role", "user").put("content", question))
+                val req1 = JSONObject().put("model", ModelManager.activeModelId).put("messages", messages)
+                    .put("tools", org.json.JSONArray(toolsJson)).put("temperature", 0).put("stream", false)
+                val (c1, b1) = postJson("/v1/chat/completions", req1.toString())
+                val choice1 = if (c1 == 200) JSONObject(b1).getJSONArray("choices").getJSONObject(0) else null
+                val calls = choice1?.getJSONObject("message")?.optJSONArray("tool_calls")
+                val call = if (calls != null && calls.length() > 0) calls.getJSONObject(0) else null
+                val callName = call?.getJSONObject("function")?.optString("name")
+                check(
+                    "OpenAI tool_calls (non-stream)",
+                    callName == "get_battery_status" && choice1?.optString("finish_reason") == "tool_calls",
+                    if (call != null) "called $callName(${call.getJSONObject("function").optString("arguments")}), finish=${choice1?.optString("finish_reason")}"
+                    else "HTTP $c1: ${b1.take(200)}"
+                )
+
+                if (call != null) {
+                    // 2. Client executes the tool and returns the result
+                    val result = batteryStatusJson()
+                    appendTest("       app executed get_battery_status -> $result\n")
+                    messages.put(JSONObject().put("role", "assistant").put("content", JSONObject.NULL).put("tool_calls", calls))
+                    messages.put(JSONObject().put("role", "tool").put("tool_call_id", call.optString("id")).put("content", result))
+                    val req2 = JSONObject().put("model", ModelManager.activeModelId).put("messages", messages)
+                        .put("tools", org.json.JSONArray(toolsJson)).put("temperature", 0).put("stream", false)
+                    val (c2, b2) = postJson("/v1/chat/completions", req2.toString())
+                    val msg2 = if (c2 == 200) JSONObject(b2).getJSONArray("choices").getJSONObject(0).getJSONObject("message") else null
+                    val answer = msg2?.optString("content").orEmpty()
+                    check("Final answer uses tool result", c2 == 200 && answer.isNotBlank(), if (c2 == 200) answer.take(160) else "HTTP $c2: ${b2.take(200)}")
+                }
+
+                // 3. OpenAI streaming: tool_calls delta and finish_reason in SSE
+                val req3 = JSONObject().put("model", ModelManager.activeModelId)
+                    .put("messages", org.json.JSONArray().put(JSONObject().put("role", "user").put("content", question)))
+                    .put("tools", org.json.JSONArray(toolsJson)).put("temperature", 0).put("stream", true)
+                val (c3, b3) = postJson("/v1/chat/completions", req3.toString())
+                check(
+                    "OpenAI tool_calls (stream)",
+                    c3 == 200 && b3.contains("\"tool_calls\"") && b3.contains("\"finish_reason\":\"tool_calls\""),
+                    "HTTP $c3, ${b3.length} bytes"
+                )
+
+                // 4. Ollama /api/chat with tools
+                val req4 = JSONObject().put("model", ModelManager.activeModelId)
+                    .put("messages", org.json.JSONArray().put(JSONObject().put("role", "user").put("content", question)))
+                    .put("tools", org.json.JSONArray(toolsJson)).put("stream", false)
+                    .put("options", JSONObject().put("temperature", 0))
+                val (c4, b4) = postJson("/api/chat", req4.toString())
+                val ollamaCalls = if (c4 == 200) JSONObject(b4).getJSONObject("message").optJSONArray("tool_calls") else null
+                check(
+                    "Ollama message.tool_calls",
+                    ollamaCalls != null && ollamaCalls.length() > 0,
+                    if (ollamaCalls != null && ollamaCalls.length() > 0) ollamaCalls.getJSONObject(0).toString().take(160) else "HTTP $c4: ${b4.take(200)}"
+                )
+            } catch (e: Exception) {
+                check("Self-test execution", false, e.message ?: e.toString())
+            }
+            appendTest("\n>>> RESULT: $passed/$total passed.\n")
+            runOnUiThread {
+                toolTestBtn.setVisualEnabled(true)
+                toolTestBtn.text = "[ TOOL CALL ]"
+            }
+        }.start()
     }
 
     private fun executePresetStream() {
@@ -2497,6 +2916,7 @@ class MainActivity : AppCompatActivity() {
                         conn.connectTimeout = 5000
                         conn.readTimeout = 125000
                         conn.setRequestProperty("Content-Type", "application/json")
+                        applyAuth(conn)
                         conn.doOutput = true
 
                         val body = """{"model":"edge-model","messages":[{"role":"user","content":"Stress task #$i"}],"stream":false}"""
@@ -2533,7 +2953,7 @@ class MainActivity : AppCompatActivity() {
 
             runOnUiThread {
                 presetS2QueueBtn.setVisualEnabled(true)
-                presetS2QueueBtn.text = "[ S2 QUEUE ]"
+                presetS2QueueBtn.text = "[ QUEUE ]"
                 latencyMetric.text = "${totalTime}ms"
                 statusMetric.text = "STRESS DONE"
                 statusMetric.setTextColor(Color.parseColor("#00FF66"))
@@ -2594,6 +3014,7 @@ class MainActivity : AppCompatActivity() {
                 conn.readTimeout = 125000
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Accept", if (isStream) "text/event-stream" else "application/json")
+                applyAuth(conn)
 
                 if (method == "POST" && body != null) {
                     conn.doOutput = true

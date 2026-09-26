@@ -14,28 +14,23 @@ compilato dalla CI.
 
 ## Stato attuale
 
-Tag **`v1`** (commit `2e73844`, merge PR #8): primo traguardo raggiunto.
-- Foreground Service 24/7 con Ktor CIO, wakelock, WifiLock, riavvio al boot.
-- LiteRT-LM 0.16.1 (Gemma 4 E2B `.litertlm`), backend CPU/GPU, testato su Pixel 9.
-- `/v1/chat/completions` e `/api/chat` con history completa (`PromptBuilder`) e streaming;
-  `/v1/models`, `/api/tags`, `/health`.
-- `RequestQueue` FIFO con 429; test JVM per coda e prompt.
-- UI TUI a 4 tab (ENGINE, DAEMON, TEST, LOGS), onboarding permessi, audit RAM/SoC.
+Tag **`v1`** (commit `2e73844`, merge PR #8) = primo traguardo. In corso **v2** (app 2.0.0)
+nella PR #9 sul branch `claude/llm-edge-devices-onnx-gguf-75v46c`:
+- M0 riordino documentale: fatto.
+- M1–M6 codice pronto, coperto da test JVM, **non ancora collaudato su device**:
+  API OpenAI/Ollama complete secondo la matrice di `docs/api-contract.md`, tool calling
+  nativo LiteRT-LM, `stop`/`max_tokens`/JSON/usage, riuso del KV-cache tra richieste,
+  API key opzionale, pre-flight RAM e crash marker, selettore CTX.
+- M7 parziale: tab TEST con `[ BENCHMARK ]` e `[ TOOL CALL ]`; split di `MainActivity.kt` rinviato.
 
-Lacune note (dettaglio nella matrice): tool calling assente (i `tools` vengono scartati in
-silenzio), `max_tokens` accettato ma non applicato, `content` come array non supportato,
-endpoint Ollama `/api/version|show|generate|ps` mancanti, nessuna autenticazione.
-Prefill mai misurato. Dimensione APK reale da verificare sull'artifact CI.
-
-M0 (riordino documentale) completato su branch `claude/llm-edge-devices-onnx-gguf-75v46c`,
-in attesa di PR e CI.
+Da verificare: CI verde sulla PR #9, poi collaudo su device (Pixel 9, Galaxy S20 FE).
 
 ## Prossimo passo
 
-1. Aprire la PR del branch M0 verso `main` e verificare la CI (job
-   `bootstrap-verification` con il nuovo elenco file).
-2. Avviare **M1 — Misure affidabili** ([`docs/roadmap.md`](docs/roadmap.md)): benchmark
-   in-app di TTFT e tok/s, correzione degli script in `scripts/`.
+1. CI verde sulla PR #9 (l'agente corregge finché serve).
+2. Collaudo di Luigi con l'APK della CI: tab TEST → `[ TOOL CALL ]` (atteso 4/4 PASS) e
+   `[ BENCHMARK ]` con GPU ON e OFF; incollare le tabelle nella PR.
+3. Con i numeri: aggiornare "Misure" e decidere sul pivot (`docs/api-contract.md` §6).
 
 ## Misure
 
@@ -46,7 +41,7 @@ in attesa di PR e CI.
 ## Decisioni e vincoli attivi
 
 - Nessun build locale: compilazione e test solo via GitHub Actions, su PR verso `main`.
-- LiteRT-LM unico motore; altri motori solo su bisogno concreto (backlog).
+- LiteRT-LM 0.16.1 unico motore, usato con l'API nativa (storico, tool, JSON); altri motori solo su bisogno concreto (backlog).
 - Server stateless; una sola inferenza alla volta (RequestQueue).
 - UI programmatica Kotlin, stile TUI; separazione ENGINE/DAEMON conservata.
 - Licenza PolyForm Noncommercial 1.0.0.

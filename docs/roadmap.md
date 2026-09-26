@@ -32,19 +32,20 @@ FIFO con 429, onboarding permessi, UI TUI a 4 tab, CI GitHub Actions con test JV
 
 ## Milestone
 
-| M | Branch suggerito | Obiettivo | Verifica |
-|---|---|---|---|
-| M0 | `claude/…` (questo) | Riordino documentale | Struttura unica, link validi, CI verde |
-| M1 | `feature/m1-benchmark` | Misure affidabili | Numeri TTFT/tok-s registrati in `STATE.md` |
-| M2 | `feature/m2-openai-compat` | Compatibilità OpenAI | Script con SDK `openai` Python passa |
-| M3 | `feature/m3-ollama-compat` | Compatibilità Ollama | Open WebUI si collega come Ollama e fa streaming |
-| M4 | `feature/m4-tool-calling` | Tool calling OpenAI + Ollama | Self-test in-app + un harness reale completa un task con ≥1 tool |
-| M5 | `feature/m5-prefix-reuse` | Ottimizzazione prefill | TTFT del secondo turno molto più basso del primo |
-| M6 | `feature/m6-auth-safe-load` | API key + caricamento sicuro | 401/200 con e senza chiave; modello troppo grande → rifiuto chiaro |
-| M7 | `feature/m7-ui` | UI riordinata | Checklist UI sotto, verificata su device |
+M1–M7 sono sviluppati insieme nella PR #9 (vedi `DECISIONI.md`, 2026-09-26).
 
-Ordine vincolante solo per M1 → M4 (i numeri di M1 decidono la priorità di M4, vedi
-pivot in `api-contract.md` §6). M7 può essere anticipato se la UI ostacola i test.
+| M | Obiettivo | Stato | Verifica |
+|---|---|---|---|
+| M0 | Riordino documentale | fatto | Struttura unica, link validi, CI verde |
+| M1 | Misure affidabili | codice pronto | `[ BENCHMARK ]` nel tab TEST → numeri in `STATE.md` |
+| M2 | Compatibilità OpenAI | codice pronto | test JVM; opzionale: SDK `openai` Python |
+| M3 | Compatibilità Ollama | codice pronto | test JVM; opzionale: Open WebUI come Ollama |
+| M4 | Tool calling OpenAI + Ollama | codice pronto | `[ TOOL CALL ]` nel tab TEST: 4/4 PASS |
+| M5 | Riuso KV-cache | codice pronto | riga "warm" del benchmark con `Cached tok` > 0 e TTFT basso |
+| M6 | API key + caricamento sicuro | codice pronto | chiave nel tab DAEMON → 401 senza, 200 con; rifiuto RAM |
+| M7 | UI riordinata | parziale | tab TEST con test di milestone; split di `MainActivity.kt` rinviato |
+
+Il pivot di `api-contract.md` §6 (TTFT a ~4000 token) si valuta con i numeri del benchmark.
 
 ### M1 — Misure affidabili
 
@@ -104,7 +105,12 @@ Da **riordinare**:
   quick shell; eliminare preset obsoleti legati alle vecchie sessioni (`S1 RECALL`, `S2 QUEUE`);
 - ridurre il rumore del tab ENGINE (audit RAM e guida Samsung in una sezione comprimibile);
 - spezzare `MainActivity.kt` (~3000 righe) in un file per tab, senza cambiare stile né
-  comportamento.
+  comportamento. **Rinviato**: refactoring ampio senza compilatore locale, da fare in una PR
+  dedicata dopo il collaudo di v2 (rischio alto, beneficio solo di manutenzione).
+
+Fatto in PR #9: `[ BENCHMARK ]` e `[ TOOL CALL ]` nel tab TEST, preset `S1 RECALL` rimosso,
+`S2 QUEUE` → `QUEUE`; selettore `CTX` (dimensione contesto) nel tab ENGINE; API key nel tab
+DAEMON; TTFT e token in cache nella telemetria.
 
 ## Fuori roadmap (vedi backlog)
 

@@ -20,34 +20,34 @@ chat-centric Android app.
 
 ```text
 MainActivity (UI, 4 tabs)            LlmServerService (Foreground Service)
-  ENGINE  -> ModelManager  <----------  Ktor CIO routes (OpenAI + Ollama)
-  DAEMON  -> start/stop service                 |
+  ENGINE  -> ModelManager  <----------  api/ApiServer (Ktor routes, OpenAI + Ollama)
+  DAEMON  -> start/stop, API key                 |  api/OpenAiApi, api/OllamaApi (DTO + mapping)
   TEST    -> HTTP calls to localhost            v
   LOGS    <- ServerConsole              RequestQueue (single worker, FIFO, 429)
                                                 |
                                                 v
-                                   PromptBuilder -> InferenceProvider
-                                                    (LiteRT-LM | Mock)
+                     GenerationRequest -> InferenceProvider.generate() -> Flow<GenerationEvent>
+                                          (LiteRtLmInferenceProvider | MockInferenceProvider)
 ```
 
-### InferenceProvider (`model/InferenceProvider.kt`)
+### Inference layer (`model/`)
 
-Abstracts the runtime. Implementations: `LiteRtLmInferenceProvider` (`.litertlm`, CPU or
-GPU backend) and `MockInferenceProvider`.
+- `ChatTypes.kt`: engine-agnostic request/event types (`ChatTurn`, `ToolDefinition`,
+  `GenerationRequest`, `GenerationEvent`).
+- `ConversationPlanner.kt`: splits a stateless request into system instruction, history and
+  input; decides when the cached conversation can be reused.
+- `GenerationPipeline.kt`: server-side `stop` sequences and result aggregation.
+- `LiteRtLmInferenceProvider.kt`: LiteRT-LM SDK mapping — native history, native tool calling
+  (`automaticToolCalling = false`), `maxOutputToken`, constrained JSON, KV reuse, cancellation.
+- `InferenceProvider.kt`: the interface and the mock provider (also simulates tool calls).
 
-Current limits (addressed in roadmap/backlog):
-- Receives an already templated `prompt: String` (Gemma template from `PromptBuilder`).
-  Possible double templating with LiteRT-LM `Conversation` — to verify in M2. A second
-  engine would require passing structured `messages` instead.
-- `maxTokens` is accepted but not applied (M2).
-- A new `Conversation` per request: no KV/prefix reuse (M5).
-
-Other engines (GGUF/llama.cpp, ONNX, ExecuTorch) are backlog, only on concrete need.
+All of it except the LiteRT-LM provider is pure Kotlin and covered by JVM tests.
 
 ### ModelManager (`model/ModelManager.kt`)
 
 Model lifecycle: selection via system file picker, load/unload, active model, CPU/GPU
-choice, hardware profile (SoC, OpenCL), RAM feasibility audit, cache purge of non-model
+choice, context size, hardware profile (SoC, OpenCL), RAM feasibility audit (pre-flight
+refusal with "force"), crash marker for loads killed by the OS, cache purge of non-model
 files in the dedicated models directory.
 
 ### RequestQueue (`model/RequestQueue.kt`)
@@ -55,9 +55,9 @@ files in the dedicated models directory.
 Single-worker FIFO, depth 4, timeout 120 s, HTTP 429 with `Retry-After` on overflow or
 timeout. Streaming holds the worker until completion. Unit-tested.
 
-### Server layer (`service/LlmServerService.kt`)
+### Server layer (`service/LlmServerService.kt`, `api/`)
 
-Ktor CIO inside a Foreground Service (`specialUse`), `PARTIAL_WAKE_LOCK`, high-performance
+`LlmServerService` hosts Ktor CIO inside a Foreground Service (`specialUse`), `PARTIAL_WAKE_LOCK`, high-performance
 `WifiLock`, `START_STICKY`, `BootReceiver`. Bind host selectable (all / Wi-Fi / cellular).
 Endpoints and their compatibility status: [api-contract.md](api-contract.md) §0.
 Stability rules: [daemon-stability-guidelines.md](daemon-stability-guidelines.md).

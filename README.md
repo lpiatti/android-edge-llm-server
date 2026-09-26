@@ -2,7 +2,7 @@
 
 An Android-native edge AI server focused on exposing local LLM inference through OpenAI and Ollama-compatible APIs. This application is designed to turn recycled or dedicated Android devices (running Android 10+) into lightweight, high-performance, local LAN server nodes.
 
-**Status:** `v1` — first milestone reached. Roadmap to full OpenAI/Ollama compatibility: [docs/roadmap.md](docs/roadmap.md).
+**Status:** `v2` in progress (PR #9): full OpenAI/Ollama compatibility, tool calling, prefix reuse. Roadmap: [docs/roadmap.md](docs/roadmap.md).
 
 ## Documentation
 
@@ -20,20 +20,23 @@ An Android-native edge AI server focused on exposing local LLM inference through
 ## Core Features
 
 *   **Decoupled Foreground Daemon:** Ktor server and LiteRT-LM runtime run inside a resilient Android Foreground Service (wake lock, Wi-Fi lock, restart on boot), independent from the UI.
-*   **OpenAI & Ollama chat endpoints:** `/v1/chat/completions` and `/api/chat` with full multi-turn history and streaming (SSE / NDJSON). Exact coverage: [compatibility matrix](docs/api-contract.md#0-compatibility-matrix).
+*   **OpenAI & Ollama APIs:** `/v1/chat/completions`, `/v1/models`, `/api/chat`, `/api/generate`, `/api/tags`, `/api/show`, `/api/ps`, `/api/version`, with streaming (SSE / NDJSON), `stop`, `max_tokens`, JSON mode and usage. Exact coverage: [compatibility matrix](docs/api-contract.md#0-compatibility-matrix).
+*   **Tool calling:** OpenAI `tools`/`tool_calls` and Ollama `tools`, using LiteRT-LM native function calling. The server returns the calls; your client executes them.
+*   **Prefix reuse:** a follow-up request that extends the previous conversation reuses the KV cache, so only the new turn is prefilled.
+*   **Optional API key** and **built-in tests** (benchmark, tool-call self-test) in the app.
 *   **Serialized inference:** FIFO request queue, HTTP 429 with `Retry-After` on overflow.
 *   **Direct model loading:** pick a `.litertlm` file, choose CPU or GPU backend, with RAM and SoC feasibility audit.
 *   **Retro terminal UI:** pure programmatic Kotlin (no XML, no Compose), with built-in API tester and log console.
 *   **LAN adapter binding:** listen on all interfaces, Wi-Fi only, or cellular only.
 *   **In-app crash catcher:** stack traces shown on next launch, no ADB needed.
 
-## Known Limitations (v1)
+## Known Limitations (v2)
 
-*   **Tool calling:** not yet supported — `tools` in requests is ignored (milestone M4).
-*   **Some request fields:** `max_tokens`/`num_predict` not enforced, `stop` unsupported, `content` must be a string (M2).
-*   **Ollama:** `/api/version`, `/api/show`, `/api/generate`, `/api/ps` missing — Open WebUI detection may fail (M3).
-*   **No authentication** (optional API key planned in M6). Plain HTTP, intended for trusted LANs.
-*   **Single concurrent inference**, and every request re-processes the whole context (prefill optimization in M5).
+*   **Text only:** image/audio parts in `messages` are rejected (400).
+*   **One model, one inference at a time:** requests are queued (HTTP 429 when the queue is full).
+*   **Not supported (501):** embeddings, legacy `/v1/completions`, Ollama model management (`pull`, `create`, `delete`, ...).
+*   **Plain HTTP:** intended for trusted LANs; set an API key in the DAEMON tab to require `Authorization: Bearer <key>`.
+*   **Device verification pending:** see the compatibility matrix for what is verified on a real device.
 
 ## Tested Models
 

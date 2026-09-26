@@ -143,7 +143,7 @@ class StatusIsland(context: Context) : LinearLayout(context) {
         val activeHost = if (LlmServerService.activeBindHost == "0.0.0.0") "All (0.0.0.0)" else LlmServerService.activeBindHost
         interfaceText.text = "Bind Interface: $activeHost"
 
-        val queueCount = com.edge.llm.server.util.ServerStats.queuedRequests
+        val queueCount = LlmServerService.activeRequestQueue?.queuedRequestsCount ?: 0
         cpuText.text = "Inference Queue: $queueCount/4 Slots"
         cpuText.setTextColor(
             when {
